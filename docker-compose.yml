@@ -1,0 +1,34 @@
+version: "3.9"
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "3001:3000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://franckkiemde:saturn123@localhost:5432/saturn-db?schema=public
+      JWT_SECRET: merci_beaucoup
+    depends_on:
+      - db
+
+  frontend-web:
+    build: ./frontend-web
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: franckkiemde
+      POSTGRES_PASSWORD: franck3003
+      POSTGRES_DB: saturn-db
+    ports:
+      - "5432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+volumes:
+  db-data:
