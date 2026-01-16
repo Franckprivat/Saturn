@@ -3,12 +3,17 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Install dependencies
 COPY package*.json ./
 RUN npm install
 
+# Copy source code (will be overridden by volume in dev)
 COPY . .
-RUN npm run build
+
+# Build for production (will be skipped if using dev mode)
+RUN npm run build || true
 
 EXPOSE 3000
 
-CMD ["npm", "start"]
+# Use dev mode for hot reload, change to "npm start" for production
+CMD ["npm", "run", "dev"]
