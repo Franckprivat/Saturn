@@ -17,7 +17,7 @@ export class AuthService {
   ) {}
 
   async signup(registerDto: RegisterDto) {
-    const { email, nickname, password } = registerDto;
+    const { email, firstName, lastName, nickname, password } = registerDto;
 
     // Vérifier si l'utilisateur existe déjà
     const existingUser = await this.prisma.user.findUnique({
@@ -35,12 +35,16 @@ export class AuthService {
     const user = await this.prisma.user.create({
       data: {
         email,
+        firstName,
+        lastName,
         nickname,
         password: hashedPassword,
       },
       select: {
         id: true,
         email: true,
+        firstName: true,
+        lastName: true,
         nickname: true,
         createdAt: true,
       },
@@ -84,6 +88,8 @@ export class AuthService {
       user: {
         id: user.id,
         email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
         nickname: user.nickname,
         createdAt: user.createdAt,
       },

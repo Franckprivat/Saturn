@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
-import { getAuthClient } from '@/lib/auth-client';
+import { authApi } from '@/lib/api';
 
 // Composant Input réutilisable
 function Input({
@@ -61,25 +61,20 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const authClient = getAuthClient();
-      await authClient.signIn.email({
+      const response = await authApi.login({
         email,
         password,
       });
 
-      const session = await authClient.session.get();
-      if (session?.user) {
-        setAuth('', {
-          id: session.user.id,
-          email: session.user.email ?? email,
-          nickname: session.user.name ?? '',
-          createdAt: new Date().toISOString(),
-        });
-      }
+      setAuth(response.access_token, response.user);
       router.push('/');
     } catch (err: any) {
       console.error('Erreur login:', err);
-      setError(err.message || 'Erreur lors de la connexion');
+      const message =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Erreur lors de la connexion';
+      setError(Array.isArray(message) ? message[0] : message);
     } finally {
       setLoading(false);
     }

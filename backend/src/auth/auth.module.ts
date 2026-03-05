@@ -17,6 +17,6 @@ import { JwtGuard } from './jwt/jwt.guard';
   ],
   providers: [AuthService, PrismaService, JwtStrategy, JwtGuard],
   controllers: [AuthController],
-  exports: [JwtGuard, AuthService],
+  exports: [JwtGuard, AuthService, JwtModule],
 })
 export class AuthModule {}

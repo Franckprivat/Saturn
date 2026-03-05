@@ -6,13 +6,14 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { MessagesModule } from './messages/messages.module';
+import { FriendsModule } from './friends/friends.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { ChatGateway } from './chat/chat.gateway';
 import { PrismaService } from './prisma/prisma.service';
 import { JwtGuard } from './auth/jwt/jwt.guard';
 
 @Module({
-  imports: [AuthModule, UsersModule, ConversationsModule, MessagesModule, GatewayModule],
+  imports: [AuthModule, UsersModule, ConversationsModule, MessagesModule, FriendsModule, GatewayModule],
   controllers: [AppController],
   providers: [
     AppService,

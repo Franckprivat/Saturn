@@ -40,7 +40,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: /api
+      NEXT_PUBLIC_API_URL: http://localhost/api
       WATCHPACK_POLLING: "true"
       # Better Auth DB connection (for email/password)
       BETTER_AUTH_DATABASE_URL: postgresql://franckkiemde:saturn123@db:5432/saturn-db

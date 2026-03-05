@@ -58,6 +58,8 @@ export interface LoginDto {
 
 export interface RegisterDto {
   email: string;
+  firstName: string;
+  lastName: string;
   nickname: string;
   password: string;
 }
@@ -67,6 +69,8 @@ export interface AuthResponse {
   user: {
     id: string;
     email: string;
+    firstName: string;
+    lastName: string;
     nickname: string;
     createdAt: string;
   };

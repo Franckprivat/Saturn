@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/authStore';
-import { getAuthClient } from '@/lib/auth-client';
+import { authApi } from '@/lib/api';
 
 // Composant Input réutilisable
 function Input({
@@ -50,6 +50,8 @@ export default function SignupPage() {
   const router = useRouter();
   const setAuth = useAuthStore((state) => state.setAuth);
 
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [nickname, setNickname] = useState('');
   const [password, setPassword] = useState('');
@@ -63,30 +65,23 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      const authClient = getAuthClient();
-      await authClient.signUp.email({
+      const response = await authApi.signup({
+        firstName,
+        lastName,
         email,
         password,
-        name: nickname,
+        nickname,
       });
 
-      const session = await authClient.session.get();
-      if (session?.user) {
-        // token vide => l'interceptor axios ne mettra pas Authorization
-        setAuth('', {
-          id: session.user.id,
-          email: session.user.email ?? email,
-          nickname: session.user.name ?? nickname,
-          createdAt: new Date().toISOString(),
-        });
-      }
+      setAuth(response.access_token, response.user);
       router.push('/');
     } catch (err: any) {
       console.error('Erreur signup:', err);
-      setError(
-        err.message ||
-        'Erreur lors de l\'inscription'
-      );
+      const message =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Erreur lors de l'inscription";
+      setError(Array.isArray(message) ? message[0] : message);
     } finally {
       setLoading(false);
     }
@@ -123,8 +118,23 @@ export default function SignupPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Input
+              label="Prénom"
+              value={firstName}
+              onChange={setFirstName}
+              placeholder="Votre prénom"
+              minLength={2}
+            />
+            <Input
+              label="Nom"
+              value={lastName}
+              onChange={setLastName}
+              placeholder="Votre nom"
+              minLength={2}
+            />
+          </div>
 
-          
           <Input
             label="Nom d'utilisateur"
             value={nickname}
