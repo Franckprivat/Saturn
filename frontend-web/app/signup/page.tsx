@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { authApi } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
+import { getAuthClient } from '@/lib/auth-client';
 
 // Composant Input réutilisable
 function Input({
@@ -63,26 +63,30 @@ export default function SignupPage() {
     setLoading(true);
 
     try {
-      const response = await authApi.signup({ email, nickname, password });
-      setAuth(response.access_token, response.user);
+      const authClient = getAuthClient();
+      await authClient.signUp.email({
+        email,
+        password,
+        name: nickname,
+      });
+
+      const session = await authClient.session.get();
+      if (session?.user) {
+        // token vide => l'interceptor axios ne mettra pas Authorization
+        setAuth('', {
+          id: session.user.id,
+          email: session.user.email ?? email,
+          nickname: session.user.name ?? nickname,
+          createdAt: new Date().toISOString(),
+        });
+      }
       router.push('/');
     } catch (err: any) {
       console.error('Erreur signup:', err);
       setError(
-        err.response?.data?.message ||
-        err.response?.data?.error ||
         err.message ||
         'Erreur lors de l\'inscription'
       );
-      
-      // Afficher plus de détails en développement
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Détails de l\'erreur:', {
-          status: err.response?.status,
-          data: err.response?.data,
-          config: err.config,
-        });
-      }
     } finally {
       setLoading(false);
     }
@@ -119,20 +123,22 @@ export default function SignupPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          <Input
-            label="Email"
-            type="email"
-            value={email}
-            onChange={setEmail}
-            placeholder="votre.adresse@email.com"
-          />
 
+          
           <Input
             label="Nom d'utilisateur"
             value={nickname}
             onChange={setNickname}
             placeholder="Votre pseudonyme"
             minLength={3}
+          />
+
+          <Input
+            label="Email"
+            type="email"
+            value={email}
+            onChange={setEmail}
+            placeholder="votre.adresse@email.com"
           />
 
           <Input

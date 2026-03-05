@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { authApi } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
+import { getAuthClient } from '@/lib/auth-client';
 
 // Composant Input réutilisable
 function Input({
@@ -12,14 +12,18 @@ function Input({
   value,
   onChange,
   placeholder,
+  hint,
   required = true,
+  minLength,
 }: {
   label: string;
   type?: string;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  hint?: string;
   required?: boolean;
+  minLength?: number;
 }) {
   return (
     <div className="space-y-1">
@@ -32,8 +36,12 @@ function Input({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         required={required}
+        minLength={minLength}
         className="w-full px-4 py-3 rounded-xl bg-black/30 border border-white/10 text-white placeholder-[#B6B6B6]/50 focus:outline-none focus:ring-2 focus:ring-[#A016D9] transition"
       />
+      {hint && (
+        <p className="text-xs text-[#B6B6B6]/70">{hint}</p>
+      )}
     </div>
   );
 }
@@ -53,25 +61,25 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await authApi.login({ email, password });
-      setAuth(response.access_token, response.user);
+      const authClient = getAuthClient();
+      await authClient.signIn.email({
+        email,
+        password,
+      });
+
+      const session = await authClient.session.get();
+      if (session?.user) {
+        setAuth('', {
+          id: session.user.id,
+          email: session.user.email ?? email,
+          nickname: session.user.name ?? '',
+          createdAt: new Date().toISOString(),
+        });
+      }
       router.push('/');
     } catch (err: any) {
       console.error('Erreur login:', err);
-      const errorMessage = err.response?.data?.message 
-        || err.response?.data?.error 
-        || err.message 
-        || 'Erreur lors de la connexion';
-      setError(errorMessage);
-      
-      // Afficher plus de détails en développement
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Détails de l\'erreur:', {
-          status: err.response?.status,
-          data: err.response?.data,
-          config: err.config,
-        });
-      }
+      setError(err.message || 'Erreur lors de la connexion');
     } finally {
       setLoading(false);
     }
@@ -103,7 +111,7 @@ export default function LoginPage() {
             Connexion
           </h1>
           <p className="text-[#B6B6B6]">
-            Connectez-vous à votre compte !
+            Connectez-vous et reprenez la discussion
           </p>
         </div>
 
@@ -122,6 +130,8 @@ export default function LoginPage() {
             value={password}
             onChange={setPassword}
             placeholder="••••••••"
+            hint="Minimum 6 caractères"
+            minLength={6}
           />
 
           {error && (

@@ -42,6 +42,9 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: /api
       WATCHPACK_POLLING: "true"
+      # Better Auth DB connection (for email/password)
+      BETTER_AUTH_DATABASE_URL: postgresql://franckkiemde:saturn123@db:5432/saturn-db
+    command: sh -c "npm install && npm run dev"
     volumes:
       # Mount source code for hot reload (comment out in production)
       - ./frontend-web:/app
@@ -49,6 +52,8 @@ services:
       - /app/.next
     depends_on:
       backend:
+        condition: service_healthy
+      db:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/"]

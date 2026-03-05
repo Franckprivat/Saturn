@@ -1,58 +1,26 @@
 import axios from 'axios';
 
-// Déterminer l'URL de l'API selon l'environnement
+
 const getApiUrl = () => {
-  // Si NEXT_PUBLIC_API_URL est défini, l'utiliser (priorité absolue)
+
   if (process.env.NEXT_PUBLIC_API_URL) {
     return process.env.NEXT_PUBLIC_API_URL;
   }
   
-  // Si on est côté client (browser)
   if (typeof window !== 'undefined') {
-    const port = window.location.port;
-    const hostname = window.location.hostname;
-    
-    // Si on est sur le port 80 (nginx) ou pas de port, utiliser /api
-    if (!port || port === '80' || port === '443') {
-      return '/api';
-    }
-    
-    // Si on est sur localhost avec le port 3000 (dev local sans Docker), utiliser backend direct
-    if ((hostname === 'localhost' || hostname === '127.0.0.1') && port === '3000') {
+
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+    if (isLocalhost && window.location.port === '3000') {
       return 'http://localhost:3001';
     }
-    
-    // Par défaut (Docker ou autre), utiliser /api
-    // Note: Si vous accédez directement au port 3000 dans Docker, utilisez le port 80 (nginx) à la place
     return '/api';
   }
   
-  // Côté serveur (SSR), utiliser l'URL par défaut
   return 'http://localhost:3001';
 };
 
 const API_URL = getApiUrl();
-
-// Log pour déboguer (uniquement en développement)
-if (typeof window !== 'undefined') {
-  const port = window.location.port;
-  const hostname = window.location.hostname;
-  
-  if (process.env.NODE_ENV === 'development') {
-    console.log('🔧 Configuration API:', {
-      API_URL,
-      location: window.location.href,
-      NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
-      port,
-      hostname,
-    });
-  }
-  
-  // Avertissement si on accède directement au port 3000 dans Docker
-  if (port === '3000' && API_URL === '/api') {
-    console.warn('⚠️ Vous accédez directement au port 3000. Pour que l\'API fonctionne, accédez via http://localhost (port 80)');
-  }
-}
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -74,18 +42,6 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Log des erreurs pour déboguer
-    if (process.env.NODE_ENV === 'development') {
-      console.error('Erreur API:', {
-        url: error.config?.url,
-        baseURL: error.config?.baseURL,
-        method: error.config?.method,
-        status: error.response?.status,
-        data: error.response?.data,
-        message: error.message,
-      });
-    }
-    
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
