@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { useChatStore } from '@/store/chatStore';
 import { useChatSocket } from '@/hooks/useChatSocket';
@@ -11,7 +11,7 @@ function classNames(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(' ');
 }
 
-export default function ChatPage() {
+function ChatPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isAuthenticated, init } = useAuthStore();
@@ -263,6 +263,14 @@ export default function ChatPage() {
         </div>
       </section>
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0B0B0F] text-white p-6">Chargement…</div>}>
+      <ChatPageContent />
+    </Suspense>
   );
 }
 
