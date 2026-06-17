@@ -1,24 +1,13 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
-import { AuthService } from './auth.service';
-import { RegisterDto } from './dto/register.dto';
-import { LoginDto } from './dto/login.dto';
+import { All, Controller, Req, Res } from '@nestjs/common';
+import { toNodeHandler } from 'better-auth/node';
+import { auth } from './better-auth.instance';
 import { Public } from './jwt/jwt.guard';
 
-@Controller('auth')
+@Public()
+@Controller('/api/auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
-
-  @Public()
-  @Post('signup')
-  @HttpCode(HttpStatus.CREATED)
-  async signup(@Body() registerDto: RegisterDto) {
-    return this.authService.signup(registerDto);
-  }
-
-  @Public()
-  @Post('login')
-  @HttpCode(HttpStatus.OK)
-  async login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  @All('*')
+  handler(@Req() req: any, @Res() res: any) {
+    return toNodeHandler(auth)(req, res);
   }
 }

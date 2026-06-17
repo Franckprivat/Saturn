@@ -1,9 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -13,54 +7,146 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  firstName String
-  lastName  String
-  nickname  String
-  password  String
-  createdAt DateTime @default(now())
-  messages  Message[]
-  conversations ConversationParticipant[]
+  id            String    @id
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  firstName     String?
+  lastName      String?
+  nickname      String?
+  bio           String?
+  socialLinks   Json?
+  avatarColor   String?
+
+  sessions      Session[]
+  accounts      Account[]
+
+  messages               Message[]
+  reactions              MessageReaction[]
+  conversations          ConversationParticipant[]
   friendRequestsSent     Friendship[] @relation("FriendshipRequester")
   friendRequestsReceived Friendship[] @relation("FriendshipAddressee")
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime? @default(now())
+  updatedAt  DateTime? @updatedAt
+
+  @@map("verification")
 }
 
 model Conversation {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
-  type      ConversationType @default(DM)
+  id           String                    @id @default(uuid())
+  createdAt    DateTime                  @default(now())
+  type         ConversationType          @default(DM)
+  name         String?
+  description  String?
+  image        String?
+  creatorId    String?
+  inviteToken  String?                   @unique
   participants ConversationParticipant[]
-  messages  Message[]
+  messages     Message[]
 }
 
 model ConversationParticipant {
-  id             String      @id @default(uuid())
-  user           User        @relation(fields: [userId], references: [id])
+  id             String            @id @default(uuid())
+  user           User              @relation(fields: [userId], references: [id])
   userId         String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversation   Conversation      @relation(fields: [conversationId], references: [id])
   conversationId String
+  role           GroupRole         @default(MEMBER)
 }
 
 model Message {
-  id             String      @id @default(uuid())
-  content        String
-  sender         User        @relation(fields: [senderId], references: [id])
+  id             String            @id @default(uuid())
+  content        String            @default("")
+  sender         User              @relation(fields: [senderId], references: [id])
   senderId       String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversation   Conversation      @relation(fields: [conversationId], references: [id])
   conversationId String
-  createdAt      DateTime    @default(now())
+  createdAt      DateTime          @default(now())
+  fileUrl        String?
+  fileName       String?
+  fileType       String?
+  whisperTo      String[]
+  isWhisper      Boolean           @default(false)
+  type           MessageType       @default(MESSAGE)
+  deletedAt      DateTime?
+  replyToId      String?
+  replyTo        Message?          @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies        Message[]         @relation("MessageReply")
+  reactions      MessageReaction[]
+}
+
+model MessageReaction {
+  id        String   @id @default(uuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emoji     String
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId])
+}
+
+enum MessageType {
+  MESSAGE
+  SYSTEM
 }
 
 model Friendship {
-  id          String   @id @default(uuid())
-  requester   User     @relation("FriendshipRequester", fields: [requesterId], references: [id])
+  id          String           @id @default(uuid())
+  requester   User             @relation("FriendshipRequester", fields: [requesterId], references: [id])
   requesterId String
-  addressee   User     @relation("FriendshipAddressee", fields: [addresseeId], references: [id])
+  addressee   User             @relation("FriendshipAddressee", fields: [addresseeId], references: [id])
   addresseeId String
   status      FriendshipStatus @default(PENDING)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
 
   @@unique([requesterId, addresseeId])
 }
@@ -74,4 +160,9 @@ enum FriendshipStatus {
 enum ConversationType {
   DM
   GROUP
+}
+
+enum GroupRole {
+  ADMIN
+  MEMBER
 }

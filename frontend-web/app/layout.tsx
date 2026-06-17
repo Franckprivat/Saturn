@@ -1,39 +1,22 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
-import { MainHeader } from "@/components/MainHeader";
+import { AppShell } from "@/components/AppShell";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const geist = Geist({ variable: "--font-geist", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Saturn - Test Auth",
-  description: "Test authentication",
+  title: "Saturn",
+  description: "Messagerie temps réel",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#0F0F14] text-white`}>
+    <html lang="fr">
+      <body className={`${geist.variable} antialiased`} style={{ color: 'var(--sat-text)' }}>
         <AuthProvider>
-          <div className="min-h-screen flex flex-col">
-            <MainHeader />
-            <main className="flex-1 flex overflow-hidden">
-              {children}
-            </main>
-          </div>
+          <AppShell>{children}</AppShell>
         </AuthProvider>
       </body>
     </html>

@@ -12,6 +12,8 @@ export function MainHeader() {
   const pathname = usePathname();
   const { user } = useAuthStore();
 
+  if (pathname === '/login' || pathname === '/signup') return null;
+
   const initial =
     (user?.nickname && user.nickname.charAt(0).toUpperCase()) ||
     (user?.email && user.email.charAt(0).toUpperCase()) ||
@@ -23,17 +25,17 @@ export function MainHeader() {
       : pathname.startsWith(href);
 
   return (
-    <header className="w-full border-b border-white/10 bg-[#0F0F14]/90 backdrop-blur-xl">
+    <header className="w-full border-b border-slate-200 bg-white/90 backdrop-blur-xl">
       <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-2xl bg-[#A016D9] flex items-center justify-center text-xs font-bold shadow-lg shadow-[#A016D9]/50">
+          <div className="w-8 h-8 rounded-2xl bg-[#2563EB] flex items-center justify-center text-xs font-bold text-white shadow-lg shadow-[#2563EB]/30">
             S
           </div>
           <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold text-white tracking-tight">
+            <span className="text-sm font-semibold text-[#1E293B] tracking-tight">
               Saturn
             </span>
-            <span className="text-[11px] text-[#B6B6B6]">
+            <span className="text-[11px] text-[#64748B]">
               Messagerie temps réel
             </span>
           </div>
@@ -45,8 +47,8 @@ export function MainHeader() {
             className={classNames(
               'px-3 py-1.5 rounded-full transition border border-transparent',
               isActive('/friends')
-                ? 'bg-[#A016D9] text-white'
-                : 'bg-black/30 text-[#B6B6B6] hover:border-white/20',
+                ? 'bg-[#2563EB] text-white'
+                : 'bg-[#F1F5F9] text-[#64748B] hover:border-slate-200',
             )}
           >
             Amis
@@ -56,8 +58,8 @@ export function MainHeader() {
             className={classNames(
               'px-3 py-1.5 rounded-full transition border border-transparent',
               isActive('/chat')
-                ? 'bg-[#A016D9] text-white'
-                : 'bg-black/30 text-[#B6B6B6] hover:border-white/20',
+                ? 'bg-[#2563EB] text-white'
+                : 'bg-[#F1F5F9] text-[#64748B] hover:border-slate-200',
             )}
           >
             Chat
@@ -69,7 +71,7 @@ export function MainHeader() {
           className="flex items-center gap-2"
           aria-label="Profil utilisateur"
         >
-          <div className="w-8 h-8 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-xs font-semibold text-white">
+          <div className="w-8 h-8 rounded-full bg-[#EFF6FF] border border-slate-200 flex items-center justify-center text-xs font-semibold text-[#2563EB]">
             {initial}
           </div>
         </Link>

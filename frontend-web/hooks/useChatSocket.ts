@@ -2,28 +2,45 @@
 
 import { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { useAuthStore } from '@/store/authStore';
+import { authClient } from '@/lib/auth-client';
+import { usePresenceStore } from '@/store/presenceStore';
 
 let socketSingleton: Socket | null = null;
 
 export function useChatSocket() {
-  const token = useAuthStore((s) => s.token);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const { setOnlineUsers, setOnline, setOffline } = usePresenceStore.getState();
 
   useEffect(() => {
-    if (!token) {
-      return;
-    }
+    authClient.getSession().then(({ data }) => {
+      if (!data?.session) return;
 
-    if (!socketSingleton) {
-      socketSingleton = io('http://localhost:3001', {
-        auth: { token },
-      });
-    }
+      if (!socketSingleton) {
+        socketSingleton = io('http://localhost:3001', { withCredentials: true });
 
-    setSocket(socketSingleton);
-  }, [token]);
+        socketSingleton.on('online_users', ({ userIds }: { userIds: string[] }) => {
+          setOnlineUsers(userIds);
+        });
+
+        socketSingleton.on('user_online', ({ userId }: { userId: string }) => {
+          setOnline(userId);
+        });
+
+        socketSingleton.on('user_offline', ({ userId }: { userId: string }) => {
+          setOffline(userId);
+        });
+      }
+
+      setSocket(socketSingleton);
+    });
+
+    return () => {
+      if (socketSingleton) {
+        socketSingleton.disconnect();
+        socketSingleton = null;
+      }
+    };
+  }, []);
 
   return socket;
 }
-

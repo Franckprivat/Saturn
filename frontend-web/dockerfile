@@ -11,7 +11,7 @@ RUN npm install
 COPY . .
 
 # Build for production (will be skipped if using dev mode)
-RUN npm run build || true
+RUN npm run build
 
 EXPOSE 3000
 

@@ -1,26 +1,91 @@
 @import "tailwindcss";
 
+/* ─── Saturn Design System ──────────────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand palette */
+  --color-primary:   #2563EB;
+  --color-secondary: #60A5FA;
+  --color-bg:        #F8FAFC;
+  --color-text:      #1E293B;
+  --color-success:   #10B981;
+  --color-error:     #EF4444;
+
+  /* Layout surfaces */
+  --sat-void:     var(--color-bg);
+  --sat-sidebar:  #FFFFFF;
+  --sat-panel:    #FFFFFF;
+  --sat-main:     var(--color-bg);
+  --sat-surface:  #FFFFFF;
+  --sat-hover:    #F1F5F9;
+  --sat-active:   #E2E8F0;
+
+  /* Glass */
+  --sat-glass:        rgba(255, 255, 255, 0.88);
+  --sat-glass-border: rgba(37, 99, 235, 0.12);
+
+  /* Borders */
+  --sat-border:   rgba(30, 41, 59, 0.08);
+  --sat-border-2: rgba(30, 41, 59, 0.14);
+
+  /* Text */
+  --sat-text:  var(--color-text);
+  --sat-muted: #64748B;
+  --sat-faint: #94A3B8;
+
+  /* Accent */
+  --sat-accent:      var(--color-primary);
+  --sat-accent2:     var(--color-secondary);
+  --sat-accent3:     var(--color-secondary);
+  --sat-accent-glow: rgba(37, 99, 235, 0.22);
+
+  /* Status */
+  --sat-online:  var(--color-success);
+  --sat-idle:    #F59E0B;
+  --sat-dnd:     var(--color-error);
+  --sat-offline: #94A3B8;
+
+  /* Theme variables (overrideable by themeStore) */
+  --bg:      var(--sat-void);
+  --surface: var(--sat-surface);
+  --border:  var(--sat-border);
+  --text:    var(--sat-text);
+  --muted:   var(--sat-muted);
+  --accent:  var(--sat-accent);
+  --accent2: var(--sat-accent2);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--sat-void);
+  color: var(--sat-text);
+  font-family: 'gg sans', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.375;
+  -webkit-font-smoothing: antialiased;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(30, 41, 59, 0.15); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(30, 41, 59, 0.25); }
+
+::selection { background: rgba(37, 99, 235, 0.2); }
+
+@keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+@keyframes pulse-dot { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+.animate-fade-in { animation: fadeIn 0.15s ease-out; }
+
+.glass {
+  background: var(--sat-glass);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  border: 1px solid var(--sat-glass-border);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
-}
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }

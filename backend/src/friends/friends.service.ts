@@ -21,11 +21,10 @@ export class FriendsService {
       },
       select: {
         id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
         nickname: true,
-        createdAt: true,
+        image: true,
+        avatarColor: true,
+        bio: true,
       },
       take: 20,
     });
@@ -69,18 +68,10 @@ export class FriendsService {
       },
       include: {
         requester: {
-          select: {
-            id: true,
-            email: true,
-            nickname: true,
-          },
+          select: { id: true, nickname: true, image: true, avatarColor: true },
         },
         addressee: {
-          select: {
-            id: true,
-            email: true,
-            nickname: true,
-          },
+          select: { id: true, nickname: true, image: true, avatarColor: true },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -98,18 +89,10 @@ export class FriendsService {
       },
       include: {
         requester: {
-          select: {
-            id: true,
-            email: true,
-            nickname: true,
-          },
+          select: { id: true, nickname: true, image: true, avatarColor: true },
         },
         addressee: {
-          select: {
-            id: true,
-            email: true,
-            nickname: true,
-          },
+          select: { id: true, nickname: true, image: true, avatarColor: true },
         },
       },
     });
@@ -147,6 +130,38 @@ export class FriendsService {
     });
 
     return updated;
+  }
+
+  async blockUser(requesterId: string, targetId: string) {
+    const existing = await this.prisma.friendship.findFirst({
+      where: {
+        OR: [
+          { requesterId, addresseeId: targetId },
+          { requesterId: targetId, addresseeId: requesterId },
+        ],
+      },
+    });
+    if (existing) {
+      return this.prisma.friendship.update({
+        where: { id: existing.id },
+        data: { status: 'BLOCKED', requesterId, addresseeId: targetId },
+      });
+    }
+    return this.prisma.friendship.create({
+      data: { requesterId, addresseeId: targetId, status: 'BLOCKED' },
+    });
+  }
+
+  async unblockUser(requesterId: string, targetId: string) {
+    await this.prisma.friendship.deleteMany({
+      where: {
+        status: 'BLOCKED',
+        OR: [
+          { requesterId, addresseeId: targetId },
+          { requesterId: targetId, addresseeId: requesterId },
+        ],
+      },
+    });
   }
 
   async ensureAreFriends(userId: string, otherUserId: string) {

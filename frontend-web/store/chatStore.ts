@@ -4,6 +4,15 @@ export interface ChatUser {
   id: string;
   email: string;
   nickname: string;
+  image?: string | null;
+  avatarColor?: string | null;
+}
+
+export interface MessageReaction {
+  id: string;
+  emoji: string;
+  userId: string;
+  user: { id: string; nickname: string; email: string };
 }
 
 export interface ChatMessage {
@@ -12,6 +21,16 @@ export interface ChatMessage {
   createdAt: string;
   conversationId: string;
   sender: ChatUser;
+  fileUrl?: string | null;
+  fileName?: string | null;
+  fileType?: string | null;
+  isWhisper?: boolean;
+  whisperTo?: string[];
+  type?: 'MESSAGE' | 'SYSTEM';
+  deletedAt?: string | null;
+  replyToId?: string | null;
+  replyTo?: ChatMessage | null;
+  reactions?: MessageReaction[];
 }
 
 export interface ConversationParticipant {
@@ -21,6 +40,8 @@ export interface ConversationParticipant {
 export interface Conversation {
   id: string;
   createdAt: string;
+  type: 'DM' | 'GROUP';
+  name?: string | null;
   participants: ConversationParticipant[];
   messages?: ChatMessage[];
 }
@@ -29,10 +50,15 @@ interface ChatState {
   conversations: Conversation[];
   messagesByConversationId: Record<string, ChatMessage[]>;
   currentConversationId: string | null;
+  unreadCounts: Record<string, number>;
   setConversations: (conversations: Conversation[]) => void;
   setCurrentConversationId: (conversationId: string | null) => void;
   setMessages: (conversationId: string, messages: ChatMessage[]) => void;
   addMessage: (conversationId: string, message: ChatMessage) => void;
+  updateMessage: (conversationId: string, messageId: string, patch: Partial<ChatMessage>) => void;
+  incrementUnread: (conversationId: string) => void;
+  clearUnread: (conversationId: string) => void;
+  totalUnread: () => number;
   reset: () => void;
 }
 
@@ -40,10 +66,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   messagesByConversationId: {},
   currentConversationId: null,
+  unreadCounts: {},
 
   setConversations: (conversations) => set({ conversations }),
 
-  setCurrentConversationId: (conversationId) => set({ currentConversationId: conversationId }),
+  setCurrentConversationId: (conversationId) => {
+    set({ currentConversationId: conversationId });
+    if (conversationId) get().clearUnread(conversationId);
+  },
 
   setMessages: (conversationId, messages) =>
     set((state) => ({
@@ -56,19 +86,52 @@ export const useChatStore = create<ChatState>((set, get) => ({
   addMessage: (conversationId, message) =>
     set((state) => {
       const existing = state.messagesByConversationId[conversationId] ?? [];
+      const messagesByConversationId = {
+        ...state.messagesByConversationId,
+        [conversationId]: [...existing, message],
+      };
+      const conversations = state.conversations.map((c) =>
+        c.id === conversationId ? { ...c, messages: [message] } : c,
+      );
+      const idx = conversations.findIndex((c) => c.id === conversationId);
+      if (idx > 0) {
+        const [conv] = conversations.splice(idx, 1);
+        conversations.unshift(conv);
+      }
+      return { messagesByConversationId, conversations };
+    }),
+
+  updateMessage: (conversationId, messageId, patch) =>
+    set((state) => {
+      const msgs = state.messagesByConversationId[conversationId] ?? [];
       return {
         messagesByConversationId: {
           ...state.messagesByConversationId,
-          [conversationId]: [...existing, message],
+          [conversationId]: msgs.map((m) => (m.id === messageId ? { ...m, ...patch } : m)),
         },
       };
     }),
+
+  incrementUnread: (conversationId) =>
+    set((state) => ({
+      unreadCounts: {
+        ...state.unreadCounts,
+        [conversationId]: (state.unreadCounts[conversationId] ?? 0) + 1,
+      },
+    })),
+
+  clearUnread: (conversationId) =>
+    set((state) => ({
+      unreadCounts: { ...state.unreadCounts, [conversationId]: 0 },
+    })),
+
+  totalUnread: () => Object.values(get().unreadCounts).reduce((a, b) => a + b, 0),
 
   reset: () =>
     set({
       conversations: [],
       messagesByConversationId: {},
       currentConversationId: null,
+      unreadCounts: {},
     }),
 }));
-

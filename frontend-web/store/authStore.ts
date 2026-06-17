@@ -3,54 +3,18 @@ import { create } from 'zustand';
 interface User {
   id: string;
   email: string;
-  firstName: string;
-  lastName: string;
-  nickname: string;
-  createdAt: string;
+  name: string;
+  firstName?: string;
+  lastName?: string;
+  nickname?: string;
 }
 
 interface AuthState {
-  token: string | null;
   user: User | null;
-  setAuth: (token: string, user: User) => void;
-  logout: () => void;
-  isAuthenticated: () => boolean;
-  init: () => void;
+  setUser: (user: User | null) => void;
 }
 
-// Fonction pour initialiser depuis localStorage
-const getStoredAuth = () => {
-  if (typeof window === 'undefined') return { token: null, user: null };
-  
-  const token = localStorage.getItem('token');
-  const userStr = localStorage.getItem('user');
-  const user = userStr ? JSON.parse(userStr) : null;
-  
-  return { token, user };
-};
-
-export const useAuthStore = create<AuthState>((set, get) => ({
-  token: null,
+export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  
-  init: () => {
-    const { token, user } = getStoredAuth();
-    set({ token, user });
-  },
-  
-  setAuth: (token: string, user: User) => {
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
-    set({ token, user });
-  },
-  
-  logout: () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    set({ token: null, user: null });
-  },
-  
-  isAuthenticated: () => {
-    return !!get().token;
-  },
+  setUser: (user) => set({ user }),
 }));
