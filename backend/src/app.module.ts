@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -8,9 +10,14 @@ import { ConversationsModule } from './conversations/conversations.module';
 import { MessagesModule } from './messages/messages.module';
 import { FriendsModule } from './friends/friends.module';
 import { ChatModule } from './chat/chat.module';
+import { UploadModule } from './upload/upload.module';
 
 @Module({
   imports: [
+    ServeStaticModule.forRoot({
+      rootPath: join(process.cwd(), 'uploads'),
+      serveRoot: '/uploads',
+    }),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -18,6 +25,7 @@ import { ChatModule } from './chat/chat.module';
     ConversationsModule,
     MessagesModule,
     ChatModule,
+    UploadModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,10 +1,15 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
 import { AppShell } from "@/components/AppShell";
 
-const geist = Geist({ variable: "--font-geist", subsets: ["latin"] });
+const jakarta = Plus_Jakarta_Sans({
+  variable: "--font-jakarta",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Saturn",
@@ -14,7 +19,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr">
-      <body className={`${geist.variable} antialiased`} style={{ color: 'var(--sat-text)' }}>
+      <body className={`${jakarta.variable} antialiased`} style={{ color: 'var(--sat-text)' }}>
         <AuthProvider>
           <AppShell>{children}</AppShell>
         </AuthProvider>

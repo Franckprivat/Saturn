@@ -68,7 +68,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  // Méthode publique utilisée par ConversationsController pour émettre des messages système
   async emitSystemMessage(conversationId: string, senderId: string, content: string) {
     const msg = await this.messagesService.createSystemMessage(senderId, conversationId, content);
     this.server.to(conversationId).emit('new_message', msg);
@@ -154,6 +153,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return message;
   }
 
+  @SubscribeMessage('edit_message')
+  async handleEditMessage(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() data: { messageId: string; content: string },
+  ) {
+    if (!client.user) throw new UnauthorizedException();
+    const updated = await this.messagesService.editMessage(data.messageId, client.user.id, data.content);
+    this.server.to(updated.conversationId).emit('message_edited', updated);
+    return updated;
+  }
+
   @SubscribeMessage('delete_message')
   async handleDeleteMessage(
     @ConnectedSocket() client: AuthedSocket,
@@ -180,5 +190,77 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       reactions: result.reactions,
     });
     return result;
+  }
+
+  @SubscribeMessage('mark_read')
+  async handleMarkRead(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() data: { conversationId: string },
+  ) {
+    if (!client.user) return;
+    await this.messagesService.markAsRead(data.conversationId, client.user.id);
+    client.to(data.conversationId).emit('messages_read', {
+      conversationId: data.conversationId,
+      userId: client.user.id,
+      readAt: new Date().toISOString(),
+    });
+  }
+
+  // ── WebRTC Signaling ──────────────────────────────────────────────────────────
+
+  @SubscribeMessage('call_offer')
+  async handleCallOffer(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() data: { conversationId: string; offer: any; callType: 'audio' | 'video' },
+  ) {
+    if (!client.user) return;
+    client.to(data.conversationId).emit('call_incoming', {
+      from: client.user.id,
+      offer: data.offer,
+      callType: data.callType,
+      conversationId: data.conversationId,
+    });
+  }
+
+  @SubscribeMessage('call_answer')
+  async handleCallAnswer(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() data: { conversationId: string; answer: any },
+  ) {
+    if (!client.user) return;
+    client.to(data.conversationId).emit('call_answered', {
+      from: client.user.id,
+      answer: data.answer,
+    });
+  }
+
+  @SubscribeMessage('call_ice_candidate')
+  async handleIceCandidate(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() data: { conversationId: string; candidate: any },
+  ) {
+    if (!client.user) return;
+    client.to(data.conversationId).emit('call_ice_candidate', {
+      from: client.user.id,
+      candidate: data.candidate,
+    });
+  }
+
+  @SubscribeMessage('call_end')
+  async handleCallEnd(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() data: { conversationId: string },
+  ) {
+    if (!client.user) return;
+    client.to(data.conversationId).emit('call_ended', { from: client.user.id });
+  }
+
+  @SubscribeMessage('call_reject')
+  async handleCallReject(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() data: { conversationId: string },
+  ) {
+    if (!client.user) return;
+    client.to(data.conversationId).emit('call_rejected', { from: client.user.id });
   }
 }

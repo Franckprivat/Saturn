@@ -27,6 +27,7 @@ model User {
 
   messages               Message[]
   reactions              MessageReaction[]
+  readReceipts           ReadReceipt[]
   conversations          ConversationParticipant[]
   friendRequestsSent     Friendship[] @relation("FriendshipRequester")
   friendRequestsReceived Friendship[] @relation("FriendshipAddressee")
@@ -79,16 +80,17 @@ model Verification {
 }
 
 model Conversation {
-  id           String                    @id @default(uuid())
-  createdAt    DateTime                  @default(now())
-  type         ConversationType          @default(DM)
-  name         String?
-  description  String?
-  image        String?
-  creatorId    String?
-  inviteToken  String?                   @unique
-  participants ConversationParticipant[]
-  messages     Message[]
+  id              String                    @id @default(uuid())
+  createdAt       DateTime                  @default(now())
+  type            ConversationType          @default(DM)
+  name            String?
+  description     String?
+  image           String?
+  creatorId       String?
+  inviteToken     String?                   @unique
+  participants    ConversationParticipant[]
+  messages        Message[]
+  pinnedMessages  PinnedMessage[]
 }
 
 model ConversationParticipant {
@@ -108,6 +110,7 @@ model Message {
   conversation   Conversation      @relation(fields: [conversationId], references: [id])
   conversationId String
   createdAt      DateTime          @default(now())
+  editedAt       DateTime?
   fileUrl        String?
   fileName       String?
   fileType       String?
@@ -119,6 +122,8 @@ model Message {
   replyTo        Message?          @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
   replies        Message[]         @relation("MessageReply")
   reactions      MessageReaction[]
+  readBy         ReadReceipt[]
+  pinnedIn       PinnedMessage[]
 }
 
 model MessageReaction {
@@ -149,6 +154,29 @@ model Friendship {
   updatedAt   DateTime         @updatedAt
 
   @@unique([requesterId, addresseeId])
+}
+
+model ReadReceipt {
+  id        String   @id @default(uuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt    DateTime @default(now())
+
+  @@unique([messageId, userId])
+}
+
+model PinnedMessage {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  messageId      String
+  message        Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  pinnedBy       String
+  pinnedAt       DateTime     @default(now())
+
+  @@unique([conversationId, messageId])
 }
 
 enum FriendshipStatus {

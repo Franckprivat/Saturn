@@ -19,6 +19,7 @@ export interface ChatMessage {
   id: string;
   content: string;
   createdAt: string;
+  editedAt?: string | null;
   conversationId: string;
   sender: ChatUser;
   fileUrl?: string | null;
@@ -31,10 +32,12 @@ export interface ChatMessage {
   replyToId?: string | null;
   replyTo?: ChatMessage | null;
   reactions?: MessageReaction[];
+  readBy?: { userId: string; readAt: string }[];
 }
 
 export interface ConversationParticipant {
   user: ChatUser;
+  role?: string;
 }
 
 export interface Conversation {
@@ -46,14 +49,21 @@ export interface Conversation {
   messages?: ChatMessage[];
 }
 
+export interface PaginationState {
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
 interface ChatState {
   conversations: Conversation[];
   messagesByConversationId: Record<string, ChatMessage[]>;
+  paginationByConversationId: Record<string, PaginationState>;
   currentConversationId: string | null;
   unreadCounts: Record<string, number>;
   setConversations: (conversations: Conversation[]) => void;
   setCurrentConversationId: (conversationId: string | null) => void;
-  setMessages: (conversationId: string, messages: ChatMessage[]) => void;
+  setMessages: (conversationId: string, messages: ChatMessage[], pagination?: PaginationState) => void;
+  prependMessages: (conversationId: string, messages: ChatMessage[], pagination?: PaginationState) => void;
   addMessage: (conversationId: string, message: ChatMessage) => void;
   updateMessage: (conversationId: string, messageId: string, patch: Partial<ChatMessage>) => void;
   incrementUnread: (conversationId: string) => void;
@@ -65,6 +75,7 @@ interface ChatState {
 export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   messagesByConversationId: {},
+  paginationByConversationId: {},
   currentConversationId: null,
   unreadCounts: {},
 
@@ -75,13 +86,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (conversationId) get().clearUnread(conversationId);
   },
 
-  setMessages: (conversationId, messages) =>
+  setMessages: (conversationId, messages, pagination) =>
     set((state) => ({
       messagesByConversationId: {
         ...state.messagesByConversationId,
         [conversationId]: messages,
       },
+      paginationByConversationId: {
+        ...state.paginationByConversationId,
+        ...(pagination ? { [conversationId]: pagination } : {}),
+      },
     })),
+
+  prependMessages: (conversationId, messages, pagination) =>
+    set((state) => {
+      const existing = state.messagesByConversationId[conversationId] ?? [];
+      return {
+        messagesByConversationId: {
+          ...state.messagesByConversationId,
+          [conversationId]: [...messages, ...existing],
+        },
+        paginationByConversationId: {
+          ...state.paginationByConversationId,
+          ...(pagination ? { [conversationId]: pagination } : {}),
+        },
+      };
+    }),
 
   addMessage: (conversationId, message) =>
     set((state) => {
@@ -131,6 +161,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({
       conversations: [],
       messagesByConversationId: {},
+      paginationByConversationId: {},
       currentConversationId: null,
       unreadCounts: {},
     }),

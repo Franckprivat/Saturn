@@ -422,7 +422,7 @@ export default function ProfilePage() {
               <div className="p-4 space-y-4">
                 <div>
                   <p className="text-xs text-[#475569] mb-2">Thème</p>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     {(Object.entries(THEMES) as [ThemeName, typeof THEMES[ThemeName]][]).map(([key, t]) => (
                       <button
                         key={key}
