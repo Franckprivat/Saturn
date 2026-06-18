@@ -23,6 +23,8 @@ services:
       - "3001:3000"
     env_file:
       - .env
+    environment:
+      PORT: "3000"
     depends_on:
       db:
         condition: service_healthy
@@ -35,6 +37,7 @@ services:
 
   frontend-web:
     build: ./frontend-web
+    user: root
     ports:
       - "3000:3000"
     env_file:
@@ -42,6 +45,7 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: http://localhost/api
       WATCHPACK_POLLING: "true"
+      PORT: "3000"
     volumes:
       # Volume mounts pour le hot reload (dev uniquement)
       # Rebuild l'image si tu modifies package.json
