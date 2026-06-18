@@ -24,16 +24,6 @@ function NavIcon({
 }) {
   return (
     <Link href={href} title={label} className="group relative flex justify-center">
-      {/* Indicateur actif */}
-      <span
-        className="absolute left-0 top-1/2 -translate-y-1/2 rounded-r-full transition-all duration-200"
-        style={{
-          width: 4,
-          height: active ? 36 : 0,
-          opacity: active ? 1 : 0,
-          background: 'linear-gradient(var(--sat-accent),var(--sat-accent3))',
-        }}
-      />
       <div
         className="relative w-12 h-12 flex items-center justify-center transition-all duration-200"
         style={{
@@ -153,6 +143,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <NavIcon href="/communities" label="Communautés" active={pathname.startsWith('/communities')}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h.01M9 13h.01M9 17h.01M15 9h.01M15 13h.01M15 17h.01" />
+          </svg>
+        </NavIcon>
+
+        <NavIcon href="/calls" label="Appels" active={pathname.startsWith('/calls')}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6.62 10.79c1.44 2.83 3.76 5.15 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" />
           </svg>
         </NavIcon>
 

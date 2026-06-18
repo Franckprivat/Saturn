@@ -42,6 +42,9 @@ export default function CommunityPage() {
   const [addChannel, setAddChannel] = useState<null | { categoryId: string | null }>(null);
   const [memberMenu, setMemberMenu] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
+  const [friends, setFriends] = useState<any[]>([]);
 
   const voice = useVoiceChannel(socket);
 
@@ -49,6 +52,7 @@ export default function CommunityPage() {
   useEffect(() => {
     authClient.getSession().then(({ data }) => { if (data?.user) setCurrentUser(data.user); });
     api.get('/communities').then((r) => setCommunities(r.data)).catch(() => {});
+    api.get('/friends').then((r) => setFriends(r.data)).catch(() => {});
   }, []);
 
   const loadDetail = useCallback(async () => {
@@ -112,15 +116,7 @@ export default function CommunityPage() {
     }
   };
 
-  const copyInvite = async () => {
-    try {
-      const res = await api.get(`/communities/${communityId}/invite`);
-      const url = `${location.origin}/communities/join/${res.data.token}`;
-      await navigator.clipboard.writeText(url);
-      toast('Lien d\'invitation copié 🔗', 'success');
-    } catch { toast('Erreur', 'error'); }
-    setSettingsOpen(false);
-  };
+  const openInvite = () => { setSettingsOpen(false); setShowInvite(true); };
 
   const renameCommunity = async () => {
     const name = window.prompt('Nouveau nom de la communauté', detail?.name);
@@ -169,6 +165,15 @@ export default function CommunityPage() {
     setMemberMenu(null);
   };
 
+  const handleAddMember = async (userId: string) => {
+    try {
+      const res = await api.post(`/communities/${communityId}/members`, { userId });
+      setDetail(res.data);
+      toast('Membre ajouté !', 'success');
+    } catch { toast('Impossible d\'ajouter ce membre', 'error'); }
+    setShowAddMember(false);
+  };
+
   if (loading) return <PageLoader label="Chargement de la communauté..." />;
   if (!detail) return null;
 
@@ -213,7 +218,7 @@ export default function CommunityPage() {
           {settingsOpen && (
             <div className="absolute top-12 left-2 right-2 z-30 rounded-xl py-1.5 shadow-xl"
               style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)' }}>
-              <button onClick={copyInvite} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition hover:bg-[var(--sat-hover)]" style={{ color: 'var(--sat-accent)' }}>
+              <button onClick={openInvite} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition hover:bg-[var(--sat-hover)]" style={{ color: 'var(--sat-accent)' }}>
                 🔗 Inviter des gens
               </button>
               {canAdmin(myRole) && (
@@ -315,8 +320,17 @@ export default function CommunityPage() {
       {/* ── Membres ── */}
       {showMembers && (
         <div className="flex flex-col flex-shrink-0 overflow-y-auto" style={{ width: 220, background: 'var(--sat-panel)', borderLeft: '1px solid var(--sat-border)' }}>
-          <div className="h-12 px-4 flex items-center flex-shrink-0" style={{ borderBottom: '1px solid var(--sat-border)' }}>
+          <div className="h-12 px-4 flex items-center justify-between flex-shrink-0" style={{ borderBottom: '1px solid var(--sat-border)' }}>
             <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--sat-muted)' }}>Membres — {detail.members.length}</span>
+            {canAdmin(myRole) && (
+              <button onClick={() => setShowAddMember(true)} title="Ajouter un membre"
+                className="w-6 h-6 rounded flex items-center justify-center transition font-bold text-sm"
+                style={{ color: 'var(--sat-muted)', background: 'var(--sat-hover)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'var(--sat-accent)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--sat-muted)'; e.currentTarget.style.background = 'var(--sat-hover)'; }}>
+                +
+              </button>
+            )}
           </div>
           <div className="flex-1 px-2 py-3 space-y-4">
             {membersByRole.map(({ role, list }) => (
@@ -366,6 +380,23 @@ export default function CommunityPage() {
       )}
       {showCreate && (
         <CreateCommunityModal onClose={() => setShowCreate(false)} onCreated={(id) => { setShowCreate(false); router.push(`/communities/${id}`); }} />
+      )}
+      {showAddMember && (
+        <AddMemberModal
+          friends={friends}
+          existingIds={detail.members.map((m) => m.user.id)}
+          onClose={() => setShowAddMember(false)}
+          onAdd={handleAddMember}
+        />
+      )}
+      {showInvite && (
+        <InviteModal
+          communityId={communityId}
+          communityName={detail.name}
+          friends={friends}
+          existingIds={detail.members.map((m) => m.user.id)}
+          onClose={() => setShowInvite(false)}
+        />
       )}
       <ToastHost />
     </div>
@@ -472,6 +503,186 @@ function VoiceStage({ channel, voice, userById, currentUserId }: {
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Modale invitation ──
+function InviteModal({ communityId, communityName, friends, existingIds, onClose }: {
+  communityId: string; communityName: string; friends: any[]; existingIds: string[]; onClose: () => void;
+}) {
+  const [inviteUrl, setInviteUrl] = useState('');
+  const [loadingUrl, setLoadingUrl] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [search, setSearch] = useState('');
+  const [sent, setSent] = useState<Set<string>>(new Set());
+  const [sending, setSending] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.get(`/communities/${communityId}/invite`).then((r) => {
+      setInviteUrl(`${location.origin}/communities/join/${r.data.token}`);
+    }).catch(() => {}).finally(() => setLoadingUrl(false));
+  }, [communityId]);
+
+  const copyLink = async () => {
+    if (!inviteUrl) return;
+    await navigator.clipboard.writeText(inviteUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const sendToDm = async (friend: any) => {
+    if (!inviteUrl || sending) return;
+    setSending(friend.id);
+    try {
+      const dm = await api.post('/conversations/dm', { userId: friend.id });
+      const msg = `Salut ! Je t'invite à rejoindre la communauté « ${communityName} » sur Saturn :\n${inviteUrl}`;
+      await api.post(`/conversations/${dm.data.id}/messages`, { content: msg });
+      setSent((prev) => new Set(prev).add(friend.id));
+    } catch { /* silencieux */ }
+    setSending(null);
+  };
+
+  const eligible = friends.filter(
+    (f) => !existingIds.includes(f.id) &&
+      (!search.trim() || (f.nickname || f.email || '').toLowerCase().includes(search.toLowerCase()))
+  );
+  const alreadyMembers = friends.filter((f) => existingIds.includes(f.id) &&
+    (!search.trim() || (f.nickname || f.email || '').toLowerCase().includes(search.toLowerCase()))
+  );
+
+  return (
+    <div className="fixed inset-0 z-[9990] flex items-center justify-center p-4"
+      style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl overflow-hidden shadow-2xl"
+        style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)' }}
+        onClick={(e) => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="px-5 pt-5 pb-4" style={{ borderBottom: '1px solid var(--sat-border)' }}>
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="font-bold text-base" style={{ color: 'var(--sat-text)' }}>Inviter dans « {communityName} »</h2>
+            <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center transition"
+              style={{ color: 'var(--sat-faint)', background: 'var(--sat-hover)' }}>✕</button>
+          </div>
+          <p className="text-xs" style={{ color: 'var(--sat-muted)' }}>Partage le lien ou envoie une invitation directement à tes contacts</p>
+        </div>
+
+        <div className="p-5 space-y-5">
+          {/* Lien d'invitation */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--sat-muted)' }}>Lien d'invitation</p>
+            <div className="flex gap-2">
+              <div className="flex-1 flex items-center px-3 py-2.5 rounded-xl text-sm truncate"
+                style={{ background: 'var(--sat-void)', border: '1px solid var(--sat-border-2)', color: 'var(--sat-muted)' }}>
+                {loadingUrl ? '...' : inviteUrl}
+              </div>
+              <button onClick={copyLink} disabled={loadingUrl}
+                className="px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-1.5 transition flex-shrink-0 disabled:opacity-40"
+                style={{ background: copied ? 'rgba(34,197,94,0.15)' : 'rgba(37,99,235,0.12)', color: copied ? '#22c55e' : 'var(--sat-accent)', border: `1.5px solid ${copied ? '#22c55e' : 'var(--sat-accent)'}` }}>
+                {copied
+                  ? <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>Copié</>
+                  : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>Copier</>}
+              </button>
+            </div>
+          </div>
+
+          {/* Recherche contacts */}
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--sat-muted)' }}>Envoyer à un contact</p>
+            <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher parmi tes contacts..."
+              className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none mb-2"
+              style={{ background: 'var(--sat-void)', border: '1px solid var(--sat-border-2)', color: 'var(--sat-text)' }} />
+
+            <div className="max-h-52 overflow-y-auto space-y-1 pr-0.5">
+              {friends.length === 0 && (
+                <p className="text-xs text-center py-5" style={{ color: 'var(--sat-faint)' }}>Aucun contact disponible</p>
+              )}
+              {eligible.map((f) => {
+                const isSent = sent.has(f.id);
+                const isSending = sending === f.id;
+                return (
+                  <div key={f.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition"
+                    style={{ background: 'var(--sat-hover)' }}>
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 overflow-hidden"
+                      style={{ background: f.image ? 'transparent' : 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
+                      {f.image ? <img src={f.image} className="w-full h-full object-cover" alt="" /> : (f.nickname || f.email || '?').charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--sat-text)' }}>{f.nickname || f.email?.split('@')[0]}</p>
+                      <p className="text-[11px] truncate" style={{ color: 'var(--sat-muted)' }}>{f.email}</p>
+                    </div>
+                    <button onClick={() => !isSent && sendToDm(f)} disabled={isSending || isSent}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold flex-shrink-0 transition disabled:opacity-60"
+                      style={{ background: isSent ? 'rgba(34,197,94,0.12)' : 'rgba(37,99,235,0.1)', color: isSent ? '#22c55e' : 'var(--sat-accent)', border: `1px solid ${isSent ? '#22c55e' : 'var(--sat-accent)'}` }}>
+                      {isSending ? '...' : isSent ? '✓ Envoyé' : 'Inviter'}
+                    </button>
+                  </div>
+                );
+              })}
+              {alreadyMembers.map((f) => (
+                <div key={f.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl opacity-40"
+                  style={{ background: 'var(--sat-hover)' }}>
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 overflow-hidden"
+                    style={{ background: f.image ? 'transparent' : 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
+                    {f.image ? <img src={f.image} className="w-full h-full object-cover" alt="" /> : (f.nickname || f.email || '?').charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold truncate" style={{ color: 'var(--sat-text)' }}>{f.nickname || f.email?.split('@')[0]}</p>
+                  </div>
+                  <span className="text-[11px] font-semibold" style={{ color: 'var(--sat-muted)' }}>Déjà membre</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Modale ajout membre ──
+function AddMemberModal({ friends, existingIds, onClose, onAdd }: {
+  friends: any[]; existingIds: string[]; onClose: () => void; onAdd: (userId: string) => void;
+}) {
+  const [search, setSearch] = useState('');
+  const eligible = friends.filter(
+    (f) => !existingIds.includes(f.id) &&
+      (!search.trim() || (f.nickname || f.email || '').toLowerCase().includes(search.toLowerCase()))
+  );
+  return (
+    <div className="fixed inset-0 z-[9990] flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
+      <div className="w-full max-w-sm rounded-2xl p-5 space-y-3" style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)' }} onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-base font-bold" style={{ color: 'var(--sat-text)' }}>Ajouter un membre</h2>
+        <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher parmi tes amis..."
+          className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none"
+          style={{ background: 'var(--sat-void)', border: '1px solid var(--sat-border-2)', color: 'var(--sat-text)' }} />
+        <div className="max-h-60 overflow-y-auto space-y-1">
+          {eligible.length === 0 && (
+            <p className="text-xs text-center py-4" style={{ color: 'var(--sat-faint)' }}>
+              {friends.length === 0 ? 'Aucun ami disponible' : 'Tous tes amis sont déjà membres'}
+            </p>
+          )}
+          {eligible.map((f) => (
+            <button key={f.id} onClick={() => onAdd(f.id)}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left"
+              style={{ background: 'var(--sat-hover)' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(37,99,235,0.12)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--sat-hover)')}>
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 overflow-hidden"
+                style={{ background: f.image ? 'transparent' : 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
+                {f.image ? <img src={f.image} className="w-full h-full object-cover" alt="" /> : (f.nickname || f.email || '?').charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold truncate" style={{ color: 'var(--sat-text)' }}>{f.nickname || f.email?.split('@')[0]}</p>
+                <p className="text-[11px] truncate" style={{ color: 'var(--sat-muted)' }}>{f.email}</p>
+              </div>
+              <span className="text-xs font-bold flex-shrink-0" style={{ color: 'var(--sat-accent)' }}>Ajouter</span>
+            </button>
+          ))}
+        </div>
+        <button onClick={onClose} className="w-full py-2.5 rounded-xl text-sm font-medium" style={{ background: 'var(--sat-hover)', color: 'var(--sat-muted)' }}>Fermer</button>
       </div>
     </div>
   );

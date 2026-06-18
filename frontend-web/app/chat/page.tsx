@@ -14,7 +14,8 @@ import { Spinner, PageLoader } from '@/components/Spinner';
 import { CallModal } from '@/components/CallModal';
 import { CreateGroupModal } from '@/components/CreateGroupModal';
 import { ToastContainer, ToastProvider, toast, type ToastItem } from '@/components/Toast';
-import { PhoneIcon, VideoIcon, SmileyIcon, PinIcon, ReplyIcon, EditIcon, TrashIcon, CopyIcon } from '@/components/Icons';
+import { PhoneIcon, VideoIcon, SmileyIcon, PinIcon, ReplyIcon, EditIcon, TrashIcon, CopyIcon, CheckSentIcon, CheckReadIcon } from '@/components/Icons';
+import { saveCallEntry } from '@/lib/callLog';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -147,7 +148,7 @@ function ChatPageContent() {
   const recordingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Call
-  const [callState, setCallState] = useState<null | { type: 'audio' | 'video'; incoming: boolean; callerName?: string; offer?: any }>(null);
+  const [callState, setCallState] = useState<null | { type: 'audio' | 'video'; incoming: boolean; callerName?: string; callerImage?: string; offer?: any }>(null);
 
   // Sidebar groupe
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -260,7 +261,7 @@ function ChatPageContent() {
       if (cid !== currentConversationId) return;
       const conv = useChatStore.getState().conversations.find((c) => c.id === cid);
       const caller = conv?.participants.find((p) => p.user.id === from)?.user;
-      setCallState({ type: ct, incoming: true, callerName: displayName(caller), offer });
+      setCallState({ type: ct, incoming: true, callerName: displayName(caller), callerImage: caller?.image || undefined, offer });
     };
     socket.on('call_incoming', callIncomingHandler);
 
@@ -578,7 +579,17 @@ function ChatPageContent() {
   // ── Call ──
   const startCall = (type: 'audio' | 'video') => {
     if (!currentConv) return;
+    const other = getOtherUser(currentConv);
     setCallState({ type, incoming: false });
+    saveCallEntry({
+      type,
+      direction: 'outgoing',
+      status: 'answered',
+      withName: other?.email || getTitle(currentConv),
+      withNickname: other ? displayName(other) : getTitle(currentConv),
+      withImage: other?.image || undefined,
+      timestamp: new Date().toISOString(),
+    });
   };
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1077,9 +1088,9 @@ function ChatPageContent() {
                             {msg.editedAt && <span className="italic">modifié ·</span>}
                             {new Date(msg.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                             {isMe && !isDeleted && (
-                              <span style={{ color: isRead ? '#60A5FA' : 'var(--sat-faint)' }}>
-                                {isRead ? '✓✓' : '✓'}
-                              </span>
+                              isRead
+                                ? <CheckReadIcon size={16} style={{ color: '#60A5FA', flexShrink: 0 }} />
+                                : <CheckSentIcon size={13} style={{ color: 'var(--sat-faint)', flexShrink: 0 }} />
                             )}
                           </span>
                         )}
@@ -1171,8 +1182,20 @@ function ChatPageContent() {
                 )}
 
                 {/* Input bar */}
-                <div className="flex items-center rounded-xl gap-1 px-3"
+                <div className="flex items-center rounded-xl gap-1 px-2"
                   style={{ background: 'var(--sat-surface)', border: whisperMode ? '1.5px solid var(--sat-accent)' : '1.5px solid var(--sat-border-2)', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
+
+                  {/* Pièce jointe — à gauche */}
+                  <button onClick={() => fileInputRef.current?.click()} title="Joindre un fichier"
+                    className="w-8 h-8 flex items-center justify-center rounded-lg transition flex-shrink-0"
+                    style={{ color: 'var(--sat-faint)' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--sat-accent)'; e.currentTarget.style.background = 'var(--sat-hover)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--sat-faint)'; e.currentTarget.style.background = 'transparent'; }}>
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                    </svg>
+                  </button>
+                  <input ref={fileInputRef} type="file" className="hidden" onChange={handleFile} />
 
                   <input ref={inputRef} type="text" value={newMessage}
                     onChange={(e) => handleTyping(e.target.value)}
@@ -1216,17 +1239,6 @@ function ChatPageContent() {
                       </button>
                       {showEmoji && <EmojiPicker onSelect={(e) => setNewMessage((m) => m + e)} onClose={() => setShowEmoji(false)} />}
                     </div>
-                    {/* Pièce jointe */}
-                    <button onClick={() => fileInputRef.current?.click()} title="Joindre un fichier"
-                      className="w-8 h-8 flex items-center justify-center rounded-lg transition"
-                      style={{ color: 'var(--sat-faint)' }}
-                      onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--sat-accent)'; e.currentTarget.style.background = 'var(--sat-hover)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--sat-faint)'; e.currentTarget.style.background = 'transparent'; }}>
-                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                      </svg>
-                    </button>
-                    <input ref={fileInputRef} type="file" className="hidden" onChange={handleFile} />
                     {/* Message vocal */}
                     <button
                       onMouseDown={startRecording}
@@ -1289,6 +1301,7 @@ function ChatPageContent() {
             callType={callState.type}
             isIncoming={callState.incoming}
             callerName={callState.callerName}
+            callerImage={callState.callerImage}
             incomingOffer={callState.offer}
             onClose={() => setCallState(null)}
           />

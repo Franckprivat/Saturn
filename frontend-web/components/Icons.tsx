@@ -90,3 +90,16 @@ export const CloseIcon = ({ size = 18, className, style, strokeWidth = 2.5 }: Ic
 export const GhostIcon = ({ size = 18, className, style, strokeWidth = 2 }: IconProps) => (
   <svg {...line(size, className, style, strokeWidth)}><path d="M12 2a7 7 0 0 0-7 7v11l2.5-2 2.5 2 2-2 2 2 2.5-2 2.5 2V9a7 7 0 0 0-7-7z" /><line x1="9" y1="10" x2="9.01" y2="10" /><line x1="15" y1="10" x2="15.01" y2="10" /></svg>
 );
+
+// ── Check / Lu (style WhatsApp) ──
+export const CheckSentIcon = ({ size = 14, className, style }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 16 12" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+    <polyline points="2 6 6 10 14 2" />
+  </svg>
+);
+export const CheckReadIcon = ({ size = 18, className, style }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 22 12" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+    <polyline points="1 6 5 10 13 2" />
+    <polyline points="9 6 13 10 21 2" />
+  </svg>
+);

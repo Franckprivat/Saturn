@@ -91,6 +91,12 @@ export class CommunitiesController {
   }
 
   // Membres
+  @Post(':id/members')
+  async addMember(@Req() req: any, @Param('id') id: string, @Body('userId') userId: string) {
+    const user = await getSessionUser(req);
+    return this.communitiesService.addMemberDirectly(id, user.id, userId);
+  }
+
   @Patch(':id/members/:userId/role')
   async setRole(@Req() req: any, @Param('id') id: string, @Param('userId') targetUserId: string, @Body('role') role: any) {
     const user = await getSessionUser(req);

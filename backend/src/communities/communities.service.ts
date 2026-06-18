@@ -224,6 +224,16 @@ export class CommunitiesService {
     return { ok: true };
   }
 
+  async addMemberDirectly(communityId: string, actorId: string, targetUserId: string) {
+    await this.requireRole(communityId, actorId, 'ADMIN');
+    const existing = await this.prisma.communityMember.findUnique({
+      where: { communityId_userId: { communityId, userId: targetUserId } },
+    });
+    if (existing) throw new BadRequestException('Cet utilisateur est déjà membre');
+    await this.prisma.communityMember.create({ data: { communityId, userId: targetUserId, role: 'MEMBER' } });
+    return this.getCommunityDetail(communityId, actorId);
+  }
+
   // ── Invitations ──────────────────────────────────────────────────────────
 
   async getInvite(communityId: string, userId: string) {

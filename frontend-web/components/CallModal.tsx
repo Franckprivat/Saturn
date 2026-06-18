@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { PhoneIcon, PhoneOffIcon, MicIcon, MicOffIcon, VideoIcon, VideoOffIcon } from '@/components/Icons';
+import { saveCallEntry } from '@/lib/callLog';
 
 interface CallModalProps {
   socket: any;
@@ -9,11 +10,12 @@ interface CallModalProps {
   callType: 'audio' | 'video';
   isIncoming: boolean;
   callerName?: string;
+  callerImage?: string;
   incomingOffer?: RTCSessionDescriptionInit;
   onClose: () => void;
 }
 
-export function CallModal({ socket, conversationId, callType, isIncoming, callerName, incomingOffer, onClose }: CallModalProps) {
+export function CallModal({ socket, conversationId, callType, isIncoming, callerName, callerImage, incomingOffer, onClose }: CallModalProps) {
   const [status, setStatus] = useState<'ringing' | 'connecting' | 'active' | 'ended'>(isIncoming ? 'ringing' : 'connecting');
   const [muted, setMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
@@ -23,8 +25,10 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const durationRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const callStartRef = useRef<number>(0);
 
   const startTimer = useCallback(() => {
+    callStartRef.current = Date.now();
     durationRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
   }, []);
 
@@ -58,6 +62,15 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
 
   const handleAccept = useCallback(async () => {
     setStatus('connecting');
+    saveCallEntry({
+      type: callType,
+      direction: 'incoming',
+      status: 'answered',
+      withName: callerName || 'Inconnu',
+      withNickname: callerName,
+      withImage: callerImage,
+      timestamp: new Date().toISOString(),
+    });
     const stream = await getLocalStream();
     const pc = createPeerConnection();
     stream.getTracks().forEach((t) => pc.addTrack(t, stream));
@@ -67,7 +80,7 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
       await pc.setLocalDescription(answer);
       socket.emit('call_answer', { conversationId, answer });
     }
-  }, [getLocalStream, createPeerConnection, incomingOffer, socket, conversationId]);
+  }, [getLocalStream, createPeerConnection, incomingOffer, socket, conversationId, callType, callerName, callerImage]);
 
   const handleEnd = useCallback(() => {
     socket.emit('call_end', { conversationId });
@@ -80,8 +93,17 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
 
   const handleReject = useCallback(() => {
     socket.emit('call_reject', { conversationId });
+    saveCallEntry({
+      type: callType,
+      direction: 'incoming',
+      status: 'missed',
+      withName: callerName || 'Inconnu',
+      withNickname: callerName,
+      withImage: callerImage,
+      timestamp: new Date().toISOString(),
+    });
     onClose();
-  }, [socket, conversationId, onClose]);
+  }, [socket, conversationId, onClose, callType, callerName, callerImage]);
 
   useEffect(() => {
     if (isIncoming) return;
