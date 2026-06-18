@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ServeStaticModule } from '@nestjs/serve-static';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { join } from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -19,6 +21,10 @@ import { CommunitiesModule } from './communities/communities.module';
       rootPath: join(process.cwd(), 'uploads'),
       serveRoot: '/uploads',
     }),
+    // Rate limiting global : 200 req/min par IP (défaut)
+    ThrottlerModule.forRoot([
+      { name: 'global', ttl: 60_000, limit: 200 },
+    ]),
     PrismaModule,
     AuthModule,
     UsersModule,
@@ -30,6 +36,10 @@ import { CommunitiesModule } from './communities/communities.module';
     CommunitiesModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    // Guard de rate limiting actif sur toutes les routes
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+  ],
 })
 export class AppModule {}

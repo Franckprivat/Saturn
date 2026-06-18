@@ -1,24 +1,35 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import helmet from 'helmet';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Augmenter la limite pour les uploads d'images en base64 (max ~5 Mo)
+  // ── Limite de taille des requêtes ─────────────────────────────────────────
   app.use(require('express').json({ limit: '6mb' }));
   app.use(require('express').urlencoded({ extended: true, limit: '6mb' }));
-  
-  // Activer la validation globale pour les DTOs
-  app.useGlobalPipes(
-    new ValidationPipe({
-      transform: true,
+
+  // ── Helmet : headers de sécurité HTTP ────────────────────────────────────
+  app.use(
+    helmet({
+      crossOriginEmbedderPolicy: false, // nécessaire pour les uploads et socket.io
+      contentSecurityPolicy: false,     // géré côté frontend (Next.js)
     }),
   );
 
-  // Activer CORS pour permettre les requêtes depuis le frontend
+  // ── Validation globale des DTOs ───────────────────────────────────────────
+  app.useGlobalPipes(
+    new ValidationPipe({
+      transform: true,
+      whitelist: true,          // supprime les champs inconnus silencieusement
+      forbidNonWhitelisted: false, // ne casse pas les controllers sans DTO
+    }),
+  );
+
+  // ── CORS ──────────────────────────────────────────────────────────────────
   const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',')
+    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
     : ['http://localhost:3000', 'http://localhost'];
 
   app.enableCors({

@@ -6,6 +6,7 @@ import {
   UseInterceptors,
   BadRequestException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
@@ -18,6 +19,7 @@ if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
 @Controller('upload')
 export class UploadController {
   @Post()
+  @Throttle({ global: { ttl: 60_000, limit: 10 } }) // max 10 uploads/min
   @UseInterceptors(
     FileInterceptor('file', {
       storage: diskStorage({
