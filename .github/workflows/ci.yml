@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
+          cache: "npm"
           cache-dependency-path: backend/package-lock.json
 
       - name: Install dependencies
@@ -47,7 +47,8 @@ jobs:
     env:
       NEXT_PUBLIC_API_URL: http://localhost/api
       BETTER_AUTH_DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
-      BETTER_AUTH_SECRET: ci-build-secret-change-in-production
+      # Stocke le vrai secret dans GitHub Settings > Secrets > Actions
+      BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET || 'ci-placeholder-not-used-in-build' }}
       BETTER_AUTH_BASE_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
@@ -55,7 +56,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
+          cache: "npm"
           cache-dependency-path: frontend-web/package-lock.json
 
       - name: Install dependencies

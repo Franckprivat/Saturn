@@ -1,19 +1,17 @@
-# Web Next.js
-FROM node:20-alpine
+# Frontend Next.js
+FROM node:22-alpine
 
 WORKDIR /app
 
-# Install dependencies
 COPY package*.json ./
-RUN npm install
+# npm ci garantit des builds reproductibles (lockfile strict)
+RUN npm ci
 
-# Copy source code (will be overridden by volume in dev)
+# Le code source est monté via volume en dev — COPY sert de fallback
 COPY . .
 
-# Build for production (will be skipped if using dev mode)
-RUN npm run build
-
+# Non-root pour la sécurité
+USER node
 EXPOSE 3000
 
-# Use dev mode for hot reload, change to "npm start" for production
 CMD ["npm", "run", "dev"]
