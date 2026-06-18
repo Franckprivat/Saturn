@@ -29,6 +29,7 @@ model User {
   reactions              MessageReaction[]
   readReceipts           ReadReceipt[]
   conversations          ConversationParticipant[]
+  communityMemberships   CommunityMember[]
   friendRequestsSent     Friendship[] @relation("FriendshipRequester")
   friendRequestsReceived Friendship[] @relation("FriendshipAddressee")
 
@@ -88,9 +89,12 @@ model Conversation {
   image           String?
   creatorId       String?
   inviteToken     String?                   @unique
+  communityId     String?
+  community       Community?                @relation(fields: [communityId], references: [id], onDelete: Cascade)
   participants    ConversationParticipant[]
   messages        Message[]
   pinnedMessages  PinnedMessage[]
+  channel         Channel?
 }
 
 model ConversationParticipant {
@@ -188,6 +192,70 @@ enum FriendshipStatus {
 enum ConversationType {
   DM
   GROUP
+  CHANNEL
+}
+
+/* ─── Communautés (façon Discord) ─────────────────────────────────────────── */
+
+model Community {
+  id            String            @id @default(uuid())
+  name          String
+  description   String?
+  image         String?
+  ownerId       String
+  inviteToken   String?           @unique
+  createdAt     DateTime          @default(now())
+  members       CommunityMember[]
+  categories    ChannelCategory[]
+  channels      Channel[]
+  conversations Conversation[]
+}
+
+model CommunityMember {
+  id          String        @id @default(uuid())
+  community   Community     @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  communityId String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  role        CommunityRole @default(MEMBER)
+  joinedAt    DateTime      @default(now())
+
+  @@unique([communityId, userId])
+}
+
+model ChannelCategory {
+  id          String    @id @default(uuid())
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  communityId String
+  name        String
+  position    Int       @default(0)
+  channels    Channel[]
+}
+
+model Channel {
+  id             String           @id @default(uuid())
+  community      Community        @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  communityId    String
+  category       ChannelCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  categoryId     String?
+  name           String
+  type           ChannelType      @default(TEXT)
+  position       Int              @default(0)
+  conversationId String?          @unique
+  conversation   Conversation?    @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  createdAt      DateTime         @default(now())
+}
+
+enum CommunityRole {
+  OWNER
+  ADMIN
+  MODERATOR
+  MEMBER
+}
+
+enum ChannelType {
+  TEXT
+  VOICE
 }
 
 enum GroupRole {

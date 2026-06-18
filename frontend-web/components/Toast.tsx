@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export type ToastType = 'success' | 'error' | 'info';
 
@@ -62,4 +62,15 @@ export function ToastProvider({ children, setToasts }: { children: React.ReactNo
     return () => { _toastFn = null; };
   }, [setToasts]);
   return <>{children}</>;
+}
+
+/** Hôte autonome : gère son propre état, à poser une fois par page. */
+export function ToastHost() {
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const remove = (id: string) => setToasts((prev) => prev.filter((t) => t.id !== id));
+  return (
+    <ToastProvider setToasts={setToasts}>
+      <ToastContainer toasts={toasts} onRemove={remove} />
+    </ToastProvider>
+  );
 }

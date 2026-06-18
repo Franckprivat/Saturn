@@ -31,11 +31,31 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private readonly logger = new Logger(ChatGateway.name);
   private onlineUsers = new Map<string, number>();
+  // Salons vocaux : channelId -> (socketId -> userId)
+  private voiceRooms = new Map<string, Map<string, string>>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly messagesService: MessagesService,
   ) {}
+
+  private broadcastVoiceState(channelId: string) {
+    const room = this.voiceRooms.get(channelId);
+    const users = room ? Array.from(new Set(room.values())) : [];
+    this.server.emit('voice_state', { channelId, users });
+  }
+
+  private leaveAllVoiceRooms(client: AuthedSocket) {
+    for (const [channelId, room] of this.voiceRooms.entries()) {
+      if (room.has(client.id)) {
+        const userId = room.get(client.id);
+        room.delete(client.id);
+        client.to(`voice:${channelId}`).emit('voice_peer_left', { socketId: client.id, userId });
+        if (room.size === 0) this.voiceRooms.delete(channelId);
+        this.broadcastVoiceState(channelId);
+      }
+    }
+  }
 
   async handleConnection(client: AuthedSocket) {
     try {
@@ -58,6 +78,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   handleDisconnect(client: AuthedSocket) {
     if (!client.user) return;
+    this.leaveAllVoiceRooms(client);
     const userId = client.user.id;
     const count = (this.onlineUsers.get(userId) ?? 1) - 1;
     if (count <= 0) {
@@ -80,10 +101,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string },
   ) {
     if (!client.user) throw new UnauthorizedException();
-    const isParticipant = await this.prisma.conversationParticipant.count({
-      where: { userId: client.user.id, conversationId: data.conversationId },
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: data.conversationId },
+      select: { type: true, communityId: true },
     });
-    if (!isParticipant) throw new ForbiddenException('Not a participant');
+    if (conv?.type === 'CHANNEL' && conv.communityId) {
+      const member = await this.prisma.communityMember.count({
+        where: { communityId: conv.communityId, userId: client.user.id },
+      });
+      if (!member) throw new ForbiddenException('Not a community member');
+    } else {
+      const isParticipant = await this.prisma.conversationParticipant.count({
+        where: { userId: client.user.id, conversationId: data.conversationId },
+      });
+      if (!isParticipant) throw new ForbiddenException('Not a participant');
+    }
     await client.join(data.conversationId);
     return { status: 'joined', conversationId: data.conversationId };
   }
@@ -262,5 +294,70 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     if (!client.user) return;
     client.to(data.conversationId).emit('call_rejected', { from: client.user.id });
+  }
+
+  // ── Salons vocaux (mesh WebRTC) ─────────────────────────────────────────────
+
+  @SubscribeMessage('voice_join')
+  async handleVoiceJoin(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() data: { channelId: string },
+  ) {
+    if (!client.user) return;
+    const roomKey = `voice:${data.channelId}`;
+    await client.join(roomKey);
+    let room = this.voiceRooms.get(data.channelId);
+    if (!room) { room = new Map(); this.voiceRooms.set(data.channelId, room); }
+
+    // Pairs déjà présents (à qui le nouvel arrivant va envoyer une offre)
+    const existingPeers = Array.from(room.entries()).map(([socketId, userId]) => ({ socketId, userId }));
+    room.set(client.id, client.user.id);
+
+    client.emit('voice_existing_peers', { channelId: data.channelId, peers: existingPeers });
+    client.to(roomKey).emit('voice_peer_joined', { channelId: data.channelId, socketId: client.id, userId: client.user.id });
+    this.broadcastVoiceState(data.channelId);
+    return { ok: true };
+  }
+
+  @SubscribeMessage('voice_leave')
+  handleVoiceLeave(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() data: { channelId: string },
+  ) {
+    if (!client.user) return;
+    const room = this.voiceRooms.get(data.channelId);
+    if (room?.has(client.id)) {
+      room.delete(client.id);
+      client.leave(`voice:${data.channelId}`);
+      client.to(`voice:${data.channelId}`).emit('voice_peer_left', { channelId: data.channelId, socketId: client.id, userId: client.user.id });
+      if (room.size === 0) this.voiceRooms.delete(data.channelId);
+      this.broadcastVoiceState(data.channelId);
+    }
+  }
+
+  @SubscribeMessage('voice_signal')
+  handleVoiceSignal(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() data: { targetSocketId: string; signal: any },
+  ) {
+    if (!client.user) return;
+    this.server.to(data.targetSocketId).emit('voice_signal', {
+      fromSocketId: client.id,
+      fromUserId: client.user.id,
+      signal: data.signal,
+    });
+  }
+
+  @SubscribeMessage('voice_mute')
+  handleVoiceMute(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() data: { channelId: string; muted: boolean },
+  ) {
+    if (!client.user) return;
+    client.to(`voice:${data.channelId}`).emit('voice_peer_mute', {
+      socketId: client.id,
+      userId: client.user.id,
+      muted: data.muted,
+    });
   }
 }

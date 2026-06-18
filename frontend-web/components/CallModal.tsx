@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { PhoneIcon, PhoneOffIcon, MicIcon, MicOffIcon, VideoIcon, VideoOffIcon } from '@/components/Icons';
 
 interface CallModalProps {
   socket: any;
@@ -139,8 +140,8 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
 
         {callType === 'audio' && (
           <div className="flex flex-col items-center py-10">
-            <div className="w-20 h-20 rounded-full mb-4 flex items-center justify-center text-4xl" style={{ background: 'rgba(37,99,235,0.2)' }}>
-              🎵
+            <div className="w-20 h-20 rounded-full mb-4 flex items-center justify-center text-white" style={{ background: 'rgba(37,99,235,0.25)' }}>
+              <PhoneIcon size={34} />
             </div>
             <audio ref={remoteRef as any} autoPlay />
             <audio ref={localRef as any} autoPlay muted />
@@ -160,25 +161,25 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
 
           {status === 'ringing' && isIncoming ? (
             <div className="flex gap-4">
-              <button onClick={handleReject} className="w-14 h-14 rounded-full flex items-center justify-center text-2xl" style={{ background: '#EF4444' }} title="Refuser">
-                📵
+              <button onClick={handleReject} className="w-14 h-14 rounded-full flex items-center justify-center text-white transition hover:opacity-90" style={{ background: '#EF4444' }} title="Refuser">
+                <PhoneOffIcon size={24} />
               </button>
-              <button onClick={handleAccept} className="w-14 h-14 rounded-full flex items-center justify-center text-2xl" style={{ background: '#10B981' }} title="Répondre">
-                📞
+              <button onClick={handleAccept} className="w-14 h-14 rounded-full flex items-center justify-center text-white transition hover:opacity-90" style={{ background: '#10B981' }} title="Répondre">
+                <PhoneIcon size={24} />
               </button>
             </div>
           ) : (
             <div className="flex gap-3">
-              <button onClick={toggleMute} className="w-12 h-12 rounded-full flex items-center justify-center text-lg transition" style={{ background: muted ? '#EF4444' : 'rgba(255,255,255,0.15)' }} title={muted ? 'Activer le micro' : 'Couper le micro'}>
-                {muted ? '🔇' : '🎙️'}
+              <button onClick={toggleMute} className="w-12 h-12 rounded-full flex items-center justify-center text-white transition" style={{ background: muted ? '#EF4444' : 'rgba(255,255,255,0.15)' }} title={muted ? 'Activer le micro' : 'Couper le micro'}>
+                {muted ? <MicOffIcon size={20} /> : <MicIcon size={20} />}
               </button>
               {callType === 'video' && (
-                <button onClick={toggleCamera} className="w-12 h-12 rounded-full flex items-center justify-center text-lg transition" style={{ background: cameraOff ? '#EF4444' : 'rgba(255,255,255,0.15)' }} title={cameraOff ? 'Activer la caméra' : 'Couper la caméra'}>
-                  {cameraOff ? '📷' : '📹'}
+                <button onClick={toggleCamera} className="w-12 h-12 rounded-full flex items-center justify-center text-white transition" style={{ background: cameraOff ? '#EF4444' : 'rgba(255,255,255,0.15)' }} title={cameraOff ? 'Activer la caméra' : 'Couper la caméra'}>
+                  {cameraOff ? <VideoOffIcon size={20} /> : <VideoIcon size={20} />}
                 </button>
               )}
-              <button onClick={handleEnd} className="w-12 h-12 rounded-full flex items-center justify-center text-xl" style={{ background: '#EF4444' }} title="Raccrocher">
-                📵
+              <button onClick={handleEnd} className="w-12 h-12 rounded-full flex items-center justify-center text-white transition hover:opacity-90" style={{ background: '#EF4444' }} title="Raccrocher">
+                <PhoneOffIcon size={22} />
               </button>
             </div>
           )}

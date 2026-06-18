@@ -150,6 +150,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </svg>
         </NavIcon>
 
+        <NavIcon href="/communities" label="Communautés" active={pathname.startsWith('/communities')}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h.01M9 13h.01M9 17h.01M15 9h.01M15 13h.01M15 17h.01" />
+          </svg>
+        </NavIcon>
+
         {/* Spacer */}
         <div className="flex-1" />
         <div className="w-8 h-px mb-1" style={{ background: 'var(--sat-border-2)' }} />

@@ -28,6 +28,19 @@ export class MessagesService {
   constructor(private readonly prisma: PrismaService) {}
 
   private async ensureParticipant(userId: string, conversationId: string) {
+    // Salon de communauté : l'accès dépend de l'appartenance à la communauté
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { type: true, communityId: true },
+    });
+    if (conv?.type === 'CHANNEL' && conv.communityId) {
+      const member = await this.prisma.communityMember.count({
+        where: { communityId: conv.communityId, userId },
+      });
+      if (!member) throw new ForbiddenException('Vous ne faites pas partie de cette communauté');
+      return;
+    }
+    // DM / groupe : vérification classique des participants
     const count = await this.prisma.conversationParticipant.count({
       where: { userId, conversationId },
     });

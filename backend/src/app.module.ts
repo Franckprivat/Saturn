@@ -11,6 +11,7 @@ import { MessagesModule } from './messages/messages.module';
 import { FriendsModule } from './friends/friends.module';
 import { ChatModule } from './chat/chat.module';
 import { UploadModule } from './upload/upload.module';
+import { CommunitiesModule } from './communities/communities.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { UploadModule } from './upload/upload.module';
     MessagesModule,
     ChatModule,
     UploadModule,
+    CommunitiesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

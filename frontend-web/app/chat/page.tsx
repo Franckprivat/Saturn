@@ -12,7 +12,9 @@ import { EmojiPicker } from '@/components/EmojiPicker';
 import { GroupPanel } from '@/components/GroupPanel';
 import { Spinner, PageLoader } from '@/components/Spinner';
 import { CallModal } from '@/components/CallModal';
+import { CreateGroupModal } from '@/components/CreateGroupModal';
 import { ToastContainer, ToastProvider, toast, type ToastItem } from '@/components/Toast';
+import { PhoneIcon, VideoIcon, SmileyIcon, PinIcon, ReplyIcon, EditIcon, TrashIcon, CopyIcon } from '@/components/Icons';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -148,11 +150,9 @@ function ChatPageContent() {
   const [callState, setCallState] = useState<null | { type: 'audio' | 'video'; incoming: boolean; callerName?: string; offer?: any }>(null);
 
   // Sidebar groupe
-  const [sidebarGroupOpen, setSidebarGroupOpen] = useState(false);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [convSearch, setConvSearch] = useState('');
   const [friends, setFriends] = useState<any[]>([]);
-  const [groupName, setGroupName] = useState('');
-  const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
-  const [creatingGroup, setCreatingGroup] = useState(false);
 
   // Surnom local
   const [aliasMap, setAliasMap] = useState<Record<string, string>>({});
@@ -568,21 +568,12 @@ function ChatPageContent() {
   };
 
   // ── Groupe sidebar ──
-  const handleCreateGroup = async () => {
-    if (!groupName.trim() || selectedFriends.length === 0) return;
-    setCreatingGroup(true);
-    try {
-      const res = await api.post('/conversations/group', { name: groupName.trim(), memberIds: selectedFriends });
-      const convs = await api.get('/conversations');
-      setConversations(convs.data);
-      setCurrentConversationId(res.data.id);
-      setSidebarGroupOpen(false);
-      setGroupName('');
-      setSelectedFriends([]);
-    } finally { setCreatingGroup(false); }
+  const handleGroupCreated = async (conversationId: string) => {
+    const convs = await api.get('/conversations');
+    setConversations(convs.data);
+    setCurrentConversationId(conversationId);
+    setShowCreateGroup(false);
   };
-  const toggleFriend = (id: string) =>
-    setSelectedFriends((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
 
   // ── Call ──
   const startCall = (type: 'audio' | 'video') => {
@@ -606,43 +597,27 @@ function ChatPageContent() {
         <aside className="flex flex-col flex-shrink-0" style={{ width: 240, background: 'var(--sat-panel)', borderRight: '1px solid var(--sat-border)' }}>
           <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--sat-border)' }}>
             <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: 'var(--sat-muted)' }}>Messages</span>
-            <button onClick={() => setSidebarGroupOpen((v) => !v)} title="Nouveau groupe"
-              className="w-5 h-5 flex items-center justify-center rounded text-lg font-bold leading-none transition"
-              style={{ color: sidebarGroupOpen ? 'var(--sat-text)' : 'var(--sat-muted)' }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--sat-text)')}
-              onMouseLeave={(e) => { if (!sidebarGroupOpen) e.currentTarget.style.color = 'var(--sat-muted)'; }}>
-              +
+            <button onClick={() => setShowCreateGroup(true)} title="Nouveau groupe"
+              className="w-6 h-6 flex items-center justify-center rounded-lg transition"
+              style={{ color: 'var(--sat-muted)', background: 'var(--sat-hover)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'var(--sat-accent)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--sat-muted)'; e.currentTarget.style.background = 'var(--sat-hover)'; }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             </button>
           </div>
 
-          {sidebarGroupOpen && (
-            <div className="p-3 space-y-2" style={{ borderBottom: '1px solid var(--sat-border)', background: 'var(--sat-void)' }}>
-              <p className="text-[10px] uppercase tracking-widest font-bold" style={{ color: 'var(--sat-muted)' }}>Nouveau groupe</p>
-              <input type="text" value={groupName} onChange={(e) => setGroupName(e.target.value)}
-                placeholder="Nom du groupe..."
-                className="w-full rounded-md px-2.5 py-1.5 text-xs focus:outline-none"
-                style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)', color: 'var(--sat-text)' }} />
-              <div className="flex flex-col gap-0.5 max-h-32 overflow-y-auto">
-                {friends.map((f) => (
-                  <button key={f.id} onClick={() => toggleFriend(f.id)}
-                    className="flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-xs transition"
-                    style={{ background: selectedFriends.includes(f.id) ? 'rgba(37,99,235,0.15)' : 'transparent', color: selectedFriends.includes(f.id) ? 'var(--sat-text)' : 'var(--sat-muted)' }}>
-                    <div className="w-3.5 h-3.5 rounded-sm border flex items-center justify-center flex-shrink-0"
-                      style={{ borderColor: selectedFriends.includes(f.id) ? 'var(--sat-accent)' : 'var(--sat-faint)', background: selectedFriends.includes(f.id) ? 'var(--sat-accent)' : 'transparent' }}>
-                      {selectedFriends.includes(f.id) && <span className="text-[7px] font-black text-white">✓</span>}
-                    </div>
-                    <Avatar user={f} size="xs" />
-                    <span className="truncate">{displayName(f)}</span>
-                  </button>
-                ))}
-              </div>
-              <button onClick={handleCreateGroup} disabled={creatingGroup || !groupName.trim() || selectedFriends.length === 0}
-                className="w-full py-1.5 rounded-md text-[11px] font-bold transition disabled:opacity-30"
-                style={{ background: 'var(--sat-accent)', color: '#fff' }}>
-                {creatingGroup ? 'Création...' : `Créer le groupe (${selectedFriends.length})`}
-              </button>
+          {/* Recherche */}
+          <div className="px-3 py-2" style={{ borderBottom: '1px solid var(--sat-border)' }}>
+            <div className="relative">
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--sat-faint)' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+              </span>
+              <input type="text" value={convSearch} onChange={(e) => setConvSearch(e.target.value)}
+                placeholder="Rechercher..."
+                className="w-full rounded-lg pl-8 pr-3 py-1.5 text-xs focus:outline-none"
+                style={{ background: 'var(--sat-void)', border: '1px solid var(--sat-border-2)', color: 'var(--sat-text)' }} />
             </div>
-          )}
+          </div>
 
           <div className="flex-1 overflow-y-auto py-2 px-2">
             {loadingConvs && <div className="flex justify-center py-10"><Spinner size={20} /></div>}
@@ -651,7 +626,9 @@ function ChatPageContent() {
                 <p className="text-xs" style={{ color: 'var(--sat-faint)' }}>Aucune conversation.<br/>Ajoute des amis pour commencer.</p>
               </div>
             )}
-            {conversations.map((conv) => {
+            {conversations
+              .filter((conv) => !convSearch.trim() || getTitle(conv).toLowerCase().includes(convSearch.toLowerCase()))
+              .map((conv) => {
               const unread = unreadCounts[conv.id] ?? 0;
               const isActive = conv.id === currentConversationId;
               const otherUser = getOtherUser(conv);
@@ -768,9 +745,9 @@ function ChatPageContent() {
                         {/* Épinglés */}
                         {pinnedMessages.length > 0 && (
                           <button onClick={() => setShowPinned((v) => !v)} title={`${pinnedMessages.length} message(s) épinglé(s)`}
-                            className="w-8 h-8 rounded flex items-center justify-center transition text-sm"
+                            className="w-8 h-8 rounded flex items-center justify-center transition"
                             style={{ color: showPinned ? 'var(--sat-accent)' : 'var(--sat-muted)', background: showPinned ? 'rgba(37,99,235,0.1)' : 'transparent' }}>
-                            📌
+                            <PinIcon size={16} />
                           </button>
                         )}
                         {/* Appel audio */}
@@ -779,9 +756,7 @@ function ChatPageContent() {
                           style={{ color: 'var(--sat-muted)' }}
                           onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--sat-text)')}
                           onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--sat-muted)')}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 13a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 2.18h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-                          </svg>
+                          <PhoneIcon size={17} />
                         </button>
                         {/* Appel vidéo */}
                         <button onClick={() => startCall('video')} title="Appel vidéo"
@@ -789,9 +764,7 @@ function ChatPageContent() {
                           style={{ color: 'var(--sat-muted)' }}
                           onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--sat-text)')}
                           onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--sat-muted)')}>
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-                            <polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" />
-                          </svg>
+                          <VideoIcon size={18} />
                         </button>
                         {/* Panel groupe */}
                         {currentConv.type === 'GROUP' && (
@@ -850,7 +823,7 @@ function ChatPageContent() {
               {showPinned && pinnedMessages.length > 0 && (
                 <div className="flex-shrink-0 px-4 py-2" style={{ borderBottom: '1px solid var(--sat-border)', background: 'rgba(37,99,235,0.04)' }}>
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[11px] font-bold" style={{ color: 'var(--sat-accent)' }}>📌 Messages épinglés</span>
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-bold" style={{ color: 'var(--sat-accent)' }}><PinIcon size={13} /> Messages épinglés</span>
                     <button onClick={() => setShowPinned(false)} className="text-xs" style={{ color: 'var(--sat-faint)' }}>✕</button>
                   </div>
                   <div className="space-y-1 max-h-36 overflow-y-auto">
@@ -961,7 +934,9 @@ function ChatPageContent() {
                         )}
 
                         {isPinned && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded mb-1" style={{ background: 'rgba(37,99,235,0.06)', color: 'var(--sat-accent)' }}>📌</span>
+                          <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded mb-1" style={{ background: 'rgba(37,99,235,0.06)', color: 'var(--sat-accent)' }}>
+                            <PinIcon size={10} /> épinglé
+                          </span>
                         )}
 
                         <div className="relative">
@@ -972,7 +947,8 @@ function ChatPageContent() {
                               {/* Réagir */}
                               <div className="relative">
                                 <button onClick={() => setReactionPickerMsgId(showReactionPicker ? null : msg.id)}
-                                  className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--sat-hover)] transition text-base" title="Réagir">😊</button>
+                                  className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-[var(--sat-hover)] transition" title="Réagir"
+                                  style={{ color: 'var(--sat-muted)' }}><SmileyIcon size={16} /></button>
                                 {showReactionPicker && (
                                   <div className={cx('absolute bottom-9 flex gap-0.5 p-1.5 rounded-xl shadow-xl z-30', isMe ? 'right-0' : 'left-0')}
                                     style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)' }}>
@@ -987,28 +963,24 @@ function ChatPageContent() {
                               <button onClick={() => { setReplyTo(msg); setHoveredMsgId(null); inputRef.current?.focus(); }}
                                 className="w-7 h-7 rounded-lg flex items-center justify-center transition hover:bg-[var(--sat-hover)]"
                                 title="Répondre" style={{ color: 'var(--sat-muted)' }}>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-                                  <polyline points="9 17 4 12 9 7" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" />
-                                </svg>
+                                <ReplyIcon size={15} strokeWidth={2.5} />
                               </button>
                               {/* Épingler */}
                               {!isPinned ? (
                                 <button onClick={() => handlePin(msg.id)}
-                                  className="w-7 h-7 rounded-lg flex items-center justify-center transition hover:bg-[var(--sat-hover)] text-sm"
-                                  title="Épingler">📌</button>
+                                  className="w-7 h-7 rounded-lg flex items-center justify-center transition hover:bg-[var(--sat-hover)]"
+                                  title="Épingler" style={{ color: 'var(--sat-muted)' }}><PinIcon size={15} /></button>
                               ) : (
                                 <button onClick={() => handleUnpin(msg.id)}
-                                  className="w-7 h-7 rounded-lg flex items-center justify-center transition hover:bg-[var(--sat-hover)] text-sm"
-                                  title="Désépingler" style={{ opacity: 0.5 }}>📌</button>
+                                  className="w-7 h-7 rounded-lg flex items-center justify-center transition hover:bg-[var(--sat-hover)]"
+                                  title="Désépingler" style={{ color: 'var(--sat-accent)' }}><PinIcon size={15} /></button>
                               )}
                               {/* Copier */}
                               {msg.content && (
                                 <button onClick={() => { navigator.clipboard.writeText(msg.content); setHoveredMsgId(null); toast('Copié !', 'success'); }}
                                   className="w-7 h-7 rounded-lg flex items-center justify-center transition hover:bg-[var(--sat-hover)]"
                                   title="Copier" style={{ color: 'var(--sat-muted)' }}>
-                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-                                    <rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                                  </svg>
+                                  <CopyIcon size={14} strokeWidth={2.5} />
                                 </button>
                               )}
                               {/* Modifier (seulement mes messages) */}
@@ -1016,10 +988,7 @@ function ChatPageContent() {
                                 <button onClick={() => startEdit(msg)}
                                   className="w-7 h-7 rounded-lg flex items-center justify-center transition hover:bg-[var(--sat-hover)]"
                                   title="Modifier" style={{ color: 'var(--sat-muted)' }}>
-                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                                  </svg>
+                                  <EditIcon size={14} strokeWidth={2.5} />
                                 </button>
                               )}
                               {/* Supprimer */}
@@ -1029,9 +998,7 @@ function ChatPageContent() {
                                   title="Supprimer" style={{ color: '#EF4444' }}
                                   onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239,68,68,0.08)')}
                                   onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
-                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
-                                    <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6M14 11v6M9 6V4h6v2" />
-                                  </svg>
+                                  <TrashIcon size={14} strokeWidth={2.5} />
                                 </button>
                               )}
                             </div>
@@ -1242,10 +1209,10 @@ function ChatPageContent() {
                     <div className="relative">
                       <button onClick={() => setShowEmoji((v) => !v)} title="Émojis"
                         className="w-8 h-8 flex items-center justify-center rounded-lg transition"
-                        style={{ color: showEmoji ? 'var(--sat-accent)' : 'var(--sat-faint)', background: showEmoji ? 'rgba(37,99,235,0.1)' : 'transparent', fontSize: 17 }}
+                        style={{ color: showEmoji ? 'var(--sat-accent)' : 'var(--sat-faint)', background: showEmoji ? 'rgba(37,99,235,0.1)' : 'transparent' }}
                         onMouseEnter={(e) => { if (!showEmoji) e.currentTarget.style.background = 'var(--sat-hover)'; }}
                         onMouseLeave={(e) => { if (!showEmoji) e.currentTarget.style.background = 'transparent'; }}>
-                        😊
+                        <SmileyIcon size={19} />
                       </button>
                       {showEmoji && <EmojiPicker onSelect={(e) => setNewMessage((m) => m + e)} onClose={() => setShowEmoji(false)} />}
                     </div>
@@ -1324,6 +1291,15 @@ function ChatPageContent() {
             callerName={callState.callerName}
             incomingOffer={callState.offer}
             onClose={() => setCallState(null)}
+          />
+        )}
+
+        {/* ── Modale création de groupe ── */}
+        {showCreateGroup && (
+          <CreateGroupModal
+            friends={friends}
+            onClose={() => setShowCreateGroup(false)}
+            onCreated={handleGroupCreated}
           />
         )}
 
