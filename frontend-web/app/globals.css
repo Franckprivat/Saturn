@@ -1,74 +1,50 @@
 @import "tailwindcss";
 
-/* ─── Saturn Design System — « Saturn UI » ──────────────────────────────────
-   Palette : bleu de confiance #2563EB, cyan frais #0EA5E9, violet dynamique
-   #8B5CF6, neutres slate. Mode clair par défaut, mode sombre via
-   html[data-theme="dark"]. Accent dynamique via themeStore (inline).
-──────────────────────────────────────────────────────────────────────────── */
-
+/* ─── Saturn Design System ──────────────────────────────────────────────── */
 :root {
-  /* Brand & états */
-  --color-primary:       #2563EB;
-  --color-primary-hover: #1D4ED8;
-  --color-secondary:     #0EA5E9;
-  --color-accent:        #8B5CF6;
-  --color-success:       #10B981;
-  --color-error:         #EF4444;
-  --color-warning:       #F59E0B;
-  --color-info:          #3B82F6;
-  --color-bg:            #F8FAFC;
-  --color-text:          #1E293B;
+  /* Brand palette */
+  --color-primary:   #2563EB;
+  --color-secondary: #60A5FA;
+  --color-bg:        #F8FAFC;
+  --color-text:      #1E293B;
+  --color-success:   #10B981;
+  --color-error:     #EF4444;
 
   /* Layout surfaces */
-  --sat-void:     #F8FAFC; /* fond principal */
+  --sat-void:     var(--color-bg);
   --sat-sidebar:  #FFFFFF;
-  --sat-panel:    #FFFFFF; /* listes / cartes */
-  --sat-main:     #F8FAFC; /* zone conversation */
-  --sat-surface:  #FFFFFF; /* cartes / bulles reçues */
+  --sat-panel:    #FFFFFF;
+  --sat-main:     var(--color-bg);
+  --sat-surface:  #FFFFFF;
   --sat-hover:    #F1F5F9;
   --sat-active:   #E2E8F0;
-
-  /* Bulles de message */
-  --sat-bubble-in:  #FFFFFF;
-  --sat-bubble-out: #2563EB;
 
   /* Glass */
   --sat-glass:        rgba(255, 255, 255, 0.88);
   --sat-glass-border: rgba(37, 99, 235, 0.12);
 
   /* Borders */
-  --sat-border:   #E2E8F0;
-  --sat-border-2: #CBD5E1;
+  --sat-border:   rgba(30, 41, 59, 0.08);
+  --sat-border-2: rgba(30, 41, 59, 0.14);
 
   /* Text */
-  --sat-text:  #1E293B;
+  --sat-text:  var(--color-text);
   --sat-muted: #64748B;
   --sat-faint: #94A3B8;
 
-  /* Accent (override dynamique par themeStore) */
-  --sat-accent:      #2563EB;
-  --sat-accent2:     #60A5FA;
-  --sat-accent3:     #60A5FA;
+  /* Accent */
+  --sat-accent:      var(--color-primary);
+  --sat-accent2:     var(--color-secondary);
+  --sat-accent3:     var(--color-secondary);
   --sat-accent-glow: rgba(37, 99, 235, 0.22);
 
-  /* Couleurs de marque additionnelles */
-  --sat-secondary: #0EA5E9;
-  --sat-violet:    #8B5CF6;
-  --sat-warning:   #F59E0B;
-  --sat-info:      #3B82F6;
-
   /* Status */
-  --sat-online:  #10B981;
+  --sat-online:  var(--color-success);
   --sat-idle:    #F59E0B;
-  --sat-dnd:     #EF4444;
+  --sat-dnd:     var(--color-error);
   --sat-offline: #94A3B8;
 
-  /* Scrollbar / selection */
-  --sat-scroll:        rgba(30, 41, 59, 0.15);
-  --sat-scroll-hover:  rgba(30, 41, 59, 0.25);
-  --sat-selection:     rgba(37, 99, 235, 0.2);
-
-  /* Compat (ancien système) */
+  /* Theme variables (overrideable by themeStore) */
   --bg:      var(--sat-void);
   --surface: var(--sat-surface);
   --border:  var(--sat-border);
@@ -76,52 +52,6 @@
   --muted:   var(--sat-muted);
   --accent:  var(--sat-accent);
   --accent2: var(--sat-accent2);
-}
-
-/* ─── Mode sombre ─────────────────────────────────────────────────────────── */
-html[data-theme="dark"] {
-  --color-bg:   #0F172A;
-  --color-text: #F1F5F9;
-
-  --sat-void:     #0F172A;
-  --sat-sidebar:  #131C2E;
-  --sat-panel:    #1E293B;
-  --sat-main:     #0F172A;
-  --sat-surface:  #1E293B;
-  --sat-hover:    #283449;
-  --sat-active:   #334155;
-
-  --sat-bubble-in:  #1E293B;
-  --sat-bubble-out: #2563EB;
-
-  --sat-glass:        rgba(15, 23, 42, 0.85);
-  --sat-glass-border: rgba(96, 165, 250, 0.18);
-
-  --sat-border:   #334155;
-  --sat-border-2: #3E4C63;
-
-  --sat-text:  #F1F5F9;
-  --sat-muted: #94A3B8;
-  --sat-faint: #64748B;
-
-  --sat-accent:      #3B82F6;
-  --sat-accent2:     #60A5FA;
-  --sat-accent3:     #60A5FA;
-  --sat-accent-glow: rgba(59, 130, 246, 0.30);
-
-  --sat-secondary: #38BDF8;
-  --sat-violet:    #A78BFA;
-  --sat-warning:   #FBBF24;
-  --sat-info:      #60A5FA;
-
-  --sat-online:  #34D399;
-  --sat-idle:    #FBBF24;
-  --sat-dnd:     #F87171;
-  --sat-offline: #64748B;
-
-  --sat-scroll:        rgba(148, 163, 184, 0.18);
-  --sat-scroll-hover:  rgba(148, 163, 184, 0.30);
-  --sat-selection:     rgba(96, 165, 250, 0.28);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -132,24 +62,21 @@ html, body {
   padding: 0;
   background: var(--sat-void);
   color: var(--sat-text);
-  font-family: var(--font-jakarta), 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  font-family: 'gg sans', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   font-size: 15px;
-  line-height: 1.45;
+  line-height: 1.375;
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  transition: background 0.2s ease, color 0.2s ease;
 }
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--sat-scroll); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: var(--sat-scroll-hover); }
+::-webkit-scrollbar-thumb { background: rgba(30, 41, 59, 0.15); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(30, 41, 59, 0.25); }
 
-::selection { background: var(--sat-selection); }
+::selection { background: rgba(37, 99, 235, 0.2); }
 
 @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
 @keyframes pulse-dot { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
-@keyframes slideInRight { from { opacity:0; transform:translateX(16px); } to { opacity:1; transform:translateX(0); } }
 
 .animate-fade-in { animation: fadeIn 0.15s ease-out; }
 

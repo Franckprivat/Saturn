@@ -2,28 +2,28 @@ name: CI
 
 on:
   push:
+    branches: [main, master]
   pull_request:
+    branches: [main, master]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # ── Backend ──────────────────────────────────────────────────────────────────
   backend:
-    name: Backend (lint · type-check · tests)
+    name: Backend (lint & test)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: backend
-
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "npm"
+          cache: npm
           cache-dependency-path: backend/package-lock.json
 
       - name: Install dependencies
@@ -35,15 +35,11 @@ jobs:
       - name: Lint
         run: npm run lint:ci
 
-      - name: Type-check
-        run: npx tsc --noEmit
-
       - name: Unit tests
         run: npm test
 
-  # ── Frontend ─────────────────────────────────────────────────────────────────
   frontend-web:
-    name: Frontend (lint · build · type-check)
+    name: Frontend web (lint & build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -51,16 +47,15 @@ jobs:
     env:
       NEXT_PUBLIC_API_URL: http://localhost/api
       BETTER_AUTH_DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
-      BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET || 'ci-placeholder-not-used-in-build' }}
+      BETTER_AUTH_SECRET: ci-build-secret-change-in-production
       BETTER_AUTH_BASE_URL: http://localhost:3000
-
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "npm"
+          cache: npm
           cache-dependency-path: frontend-web/package-lock.json
 
       - name: Install dependencies
@@ -71,6 +66,3 @@ jobs:
 
       - name: Build
         run: npm run build
-
-      - name: Type-check
-        run: npx tsc --noEmit

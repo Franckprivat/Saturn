@@ -14,9 +14,11 @@ CREATE TYPE "ConversationType" AS ENUM ('DM', 'GROUP');
 -- AlterTable
 ALTER TABLE "Conversation" ADD COLUMN     "type" "ConversationType" NOT NULL DEFAULT 'DM';
 
--- AlterTable
-ALTER TABLE "User" ADD COLUMN     "firstName" TEXT NOT NULL,
-ADD COLUMN     "lastName" TEXT NOT NULL;
+-- AlterTable: DEFAULT '' permet l'application sur une table non vide
+ALTER TABLE "User" ADD COLUMN     "firstName" TEXT NOT NULL DEFAULT '',
+ADD COLUMN     "lastName" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "User" ALTER COLUMN "firstName" DROP DEFAULT;
+ALTER TABLE "User" ALTER COLUMN "lastName" DROP DEFAULT;
 
 -- CreateTable
 CREATE TABLE "Friendship" (
