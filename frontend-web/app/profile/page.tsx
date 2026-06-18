@@ -88,6 +88,12 @@ export default function ProfilePage() {
   const [image, setImage] = useState<string | null>(null);
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
 
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [pwdMessage, setPwdMessage] = useState('');
+  const [savingPwd, setSavingPwd] = useState(false);
+
   const { theme, accent, setTheme, setAccent } = useThemeStore();
   const [showQR, setShowQR] = useState(false);
 
@@ -131,6 +137,30 @@ export default function ProfilePage() {
   };
 
   const handleLogout = async () => { await authClient.signOut(); router.push('/login'); };
+
+  const PWD_CRITERIA = [
+    { label: '8 caractères minimum', test: (p: string) => p.length >= 8 },
+    { label: 'Une majuscule (A-Z)', test: (p: string) => /[A-Z]/.test(p) },
+    { label: 'Un chiffre (0-9)', test: (p: string) => /[0-9]/.test(p) },
+    { label: 'Un caractère spécial', test: (p: string) => /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(p) },
+  ];
+
+  const handleChangePassword = async () => {
+    setPwdMessage('');
+    if (!currentPassword || !newPassword) { setPwdMessage('Remplis tous les champs.'); return; }
+    if (newPassword !== confirmPassword) { setPwdMessage('Les mots de passe ne correspondent pas.'); return; }
+    if (!PWD_CRITERIA.every((c) => c.test(newPassword))) { setPwdMessage('Le nouveau mot de passe ne respecte pas les critères.'); return; }
+    setSavingPwd(true);
+    try {
+      await authClient.changePassword({ currentPassword, newPassword, revokeOtherSessions: false });
+      setPwdMessage('Mot de passe modifié avec succès !');
+      setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
+    } catch (err: any) {
+      setPwdMessage(err?.message || 'Erreur lors du changement de mot de passe.');
+    } finally {
+      setSavingPwd(false);
+    }
+  };
 
   if (!user) return <PageLoader label="Chargement du profil..." />;
 
@@ -458,6 +488,42 @@ export default function ProfilePage() {
                     ))}
                   </div>
                 </div>
+              </div>
+            </Card>
+
+            <Card>
+              <SectionTitle>Changer le mot de passe</SectionTitle>
+              <div className="p-4 space-y-3">
+                {(['Mot de passe actuel', 'Nouveau mot de passe', 'Confirmer'] as const).map((label, i) => {
+                  const vals = [currentPassword, newPassword, confirmPassword];
+                  const setters = [setCurrentPassword, setNewPassword, setConfirmPassword];
+                  return (
+                    <input key={label} type="password" placeholder={label} value={vals[i]}
+                      onChange={(e) => setters[i](e.target.value)}
+                      className="w-full px-3 py-2.5 rounded-xl text-sm focus:outline-none transition"
+                      style={{ background: 'var(--sat-hover)', border: '1.5px solid var(--sat-border-2)', color: 'var(--sat-text)' }} />
+                  );
+                })}
+                {newPassword && (
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1">
+                    {PWD_CRITERIA.map((c) => {
+                      const ok = c.test(newPassword);
+                      return (
+                        <span key={c.label} className="flex items-center gap-1 text-[11px]" style={{ color: ok ? '#10B981' : 'var(--sat-faint)' }}>
+                          {ok ? '✓' : '○'} {c.label}
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
+                {pwdMessage && (
+                  <p className="text-xs font-medium" style={{ color: pwdMessage.includes('succès') ? '#10B981' : '#EF4444' }}>{pwdMessage}</p>
+                )}
+                <button onClick={handleChangePassword} disabled={savingPwd}
+                  className="w-full py-2.5 rounded-xl text-sm font-bold transition disabled:opacity-50"
+                  style={{ background: 'var(--sat-accent)', color: '#fff' }}>
+                  {savingPwd ? 'Modification…' : 'Changer le mot de passe'}
+                </button>
               </div>
             </Card>
 

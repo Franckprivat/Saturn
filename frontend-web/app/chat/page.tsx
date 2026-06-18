@@ -85,7 +85,7 @@ function ChatPageContent() {
     conversations, messagesByConversationId, paginationByConversationId,
     currentConversationId, unreadCounts,
     setConversations, setCurrentConversationId, setMessages, prependMessages,
-    addMessage, updateMessage, incrementUnread,
+    addMessage, updateMessage, replaceMessage, incrementUnread,
   } = useChatStore();
   const isOnline = usePresenceStore((s) => s.isOnline);
   const socket = useChatSocket();
@@ -210,10 +210,26 @@ function ChatPageContent() {
     if (!socket) return;
 
     const handler = (msg: any) => {
+      const store = useChatStore.getState();
+      const existingMsgs = store.messagesByConversationId[msg.conversationId] ?? [];
+
+      // Dedup: message already replaced in store via socket ACK callback
+      if (existingMsgs.some((m) => m.id === msg.id)) return;
+
+      if (msg.sender?.id === currentUser?.id) {
+        // Own message: replace any pending optimistic message
+        const pendingMsg = existingMsgs.find((m) => m.pending);
+        if (pendingMsg) {
+          store.replaceMessage(msg.conversationId, pendingMsg.id, msg);
+        } else {
+          store.addMessage(msg.conversationId, msg);
+        }
+        return;
+      }
+
       addMessage(msg.conversationId, msg);
       if (msg.conversationId !== currentConversationId) {
         incrementUnread(msg.conversationId);
-        // Browser notification
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
           new Notification(`Saturn — ${displayName(msg.sender)}`, { body: msg.content || '📎 Fichier', icon: '/favicon.ico' });
         }
@@ -221,7 +237,7 @@ function ChatPageContent() {
         socket.emit('mark_read', { conversationId: msg.conversationId });
       }
       setTypingUsers((prev) => { const n = { ...prev }; delete n[msg.sender?.id]; return n; });
-      if (msg.sender?.id !== currentUser?.id && msg.conversationId === currentConversationId && !msg.fileUrl) {
+      if (msg.conversationId === currentConversationId && !msg.fileUrl) {
         fetchAiSuggestions(msg);
       }
     };
@@ -384,20 +400,53 @@ function ChatPageContent() {
     }, 2000);
   };
 
-  // ── Send message ──
+  // ── Send message (optimistic) ──
   const handleSend = (content?: string) => {
     const text = content ?? newMessage;
-    if (!socket || !currentConversationId || !text.trim()) return;
-    socket.emit('send_message', {
-      conversationId: currentConversationId,
+    if (!socket || !currentConversationId || !text.trim() || !currentUser) return;
+
+    // Show message immediately — no waiting for server round-trip
+    const tempId = `temp_${Date.now()}_${Math.round(Math.random() * 1e6)}`;
+    const optimistic = {
+      id: tempId,
       content: text.trim(),
-      ...(whisperMode && whisperTargets.length > 0 ? { whisperTo: whisperTargets } : {}),
-      ...(replyTo ? { replyToId: replyTo.id } : {}),
-    });
+      createdAt: new Date().toISOString(),
+      conversationId: currentConversationId,
+      sender: {
+        id: currentUser.id,
+        email: currentUser.email,
+        nickname: currentUser.nickname,
+        image: currentUser.image,
+        avatarColor: currentUser.avatarColor,
+      },
+      type: 'MESSAGE' as const,
+      reactions: [],
+      readBy: [],
+      pending: true,
+      ...(replyTo ? { replyToId: replyTo.id, replyTo } : {}),
+    };
+    addMessage(currentConversationId, optimistic);
+
+    socket.emit(
+      'send_message',
+      {
+        conversationId: currentConversationId,
+        content: text.trim(),
+        ...(whisperMode && whisperTargets.length > 0 ? { whisperTo: whisperTargets } : {}),
+        ...(replyTo ? { replyToId: replyTo.id } : {}),
+      },
+      (serverMsg: any) => {
+        // ACK: swap temp message for server-confirmed version
+        if (serverMsg?.id) {
+          useChatStore.getState().replaceMessage(currentConversationId, tempId, serverMsg);
+        }
+      },
+    );
+
     if (!content) setNewMessage('');
     setReplyTo(null);
     setAiSuggestions([]);
-    if (socket && currentConversationId) socket.emit('typing_stop', { conversationId: currentConversationId });
+    socket.emit('typing_stop', { conversationId: currentConversationId });
   };
 
   // ── Delete ──
@@ -605,7 +654,10 @@ function ChatPageContent() {
       <div className="flex w-full h-full overflow-hidden" style={{ color: 'var(--sat-text)' }}>
 
         {/* ── COL 1 : Liste conversations ── */}
-        <aside className="flex flex-col flex-shrink-0" style={{ width: 240, background: 'var(--sat-panel)', borderRight: '1px solid var(--sat-border)' }}>
+        <aside className={cx(
+          'flex flex-col flex-shrink-0',
+          currentConversationId ? 'hidden md:flex' : 'flex',
+        )} style={{ width: 240, background: 'var(--sat-panel)', borderRight: '1px solid var(--sat-border)' }}>
           <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--sat-border)' }}>
             <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: 'var(--sat-muted)' }}>Messages</span>
             <button onClick={() => setShowCreateGroup(true)} title="Nouveau groupe"
@@ -682,7 +734,10 @@ function ChatPageContent() {
         </aside>
 
         {/* ── COL 2 : Zone principale ── */}
-        <section className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ background: 'var(--sat-main)' }}>
+        <section className={cx(
+          'flex-1 flex flex-col overflow-hidden min-w-0',
+          !currentConversationId ? 'hidden md:flex' : 'flex',
+        )} style={{ background: 'var(--sat-main)' }}>
           {!currentConversationId ? (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center space-y-4">
@@ -740,6 +795,17 @@ function ChatPageContent() {
                           {currentConv.type === 'GROUP' ? `— ${currentConv.participants.length} membres` : online ? '— En ligne' : '— Hors ligne'}
                         </span>
                       </div>
+
+                      {/* Retour mobile */}
+                      <button
+                        className="md:hidden w-8 h-8 flex items-center justify-center rounded-lg mr-1 flex-shrink-0 transition"
+                        style={{ color: 'var(--sat-muted)' }}
+                        onClick={() => setCurrentConversationId(null)}
+                        title="Retour">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="15 18 9 12 15 6" />
+                        </svg>
+                      </button>
 
                       {/* Header actions */}
                       <div className="flex items-center gap-0.5 flex-shrink-0">
@@ -903,6 +969,7 @@ function ChatPageContent() {
                   const isMe = msg.sender.id === currentUser?.id;
                   const isDeleted = !!msg.deletedAt;
                   const isEditing = editingMsgId === msg.id;
+                  const isPending = !!msg.pending;
                   const prevMsg = currentMessages[i - 1] as any;
                   const nextMsg = currentMessages[i + 1] as any;
                   const samePrev = prevMsg?.type !== 'SYSTEM' && prevMsg?.sender?.id === msg.sender.id && new Date(msg.createdAt).getTime() - new Date(prevMsg?.createdAt ?? 0).getTime() < 300000;
@@ -925,7 +992,8 @@ function ChatPageContent() {
                   return (
                     <div key={msg.id}
                       className={cx('flex items-end gap-2', isMe ? 'justify-end' : 'justify-start', samePrev ? 'mt-0.5' : 'mt-3')}
-                      onMouseEnter={() => setHoveredMsgId(msg.id)}
+                      style={{ opacity: isPending ? 0.65 : 1, transition: 'opacity 0.15s' }}
+                      onMouseEnter={() => !isPending && setHoveredMsgId(msg.id)}
                       onMouseLeave={() => { setHoveredMsgId(null); if (reactionPickerMsgId === msg.id) setReactionPickerMsgId(null); }}>
 
                       {!isMe && (

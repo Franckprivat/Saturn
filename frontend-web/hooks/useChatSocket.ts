@@ -7,14 +7,17 @@ import { usePresenceStore } from '@/store/presenceStore';
 import { useNotificationStore } from '@/store/notificationStore';
 
 let socketSingleton: Socket | null = null;
+let consumerCount = 0;
 
 export function useChatSocket() {
   const [socket, setSocket] = useState<Socket | null>(null);
   const { setOnlineUsers, setOnline, setOffline } = usePresenceStore.getState();
 
   useEffect(() => {
+    let mounted = true;
+
     authClient.getSession().then(({ data }) => {
-      if (!data?.session) return;
+      if (!data?.session || !mounted) return;
 
       if (!socketSingleton) {
         socketSingleton = io('http://localhost:3001', { withCredentials: true });
@@ -36,13 +39,18 @@ export function useChatSocket() {
         });
       }
 
+      consumerCount++;
       setSocket(socketSingleton);
     });
 
     return () => {
-      if (socketSingleton) {
+      mounted = false;
+      consumerCount--;
+      // Only disconnect when the last consumer unmounts (AppShell keeps count ≥ 1 throughout the session)
+      if (consumerCount <= 0 && socketSingleton) {
         socketSingleton.disconnect();
         socketSingleton = null;
+        consumerCount = 0;
       }
     };
   }, []);

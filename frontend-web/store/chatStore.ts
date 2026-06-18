@@ -27,12 +27,13 @@ export interface ChatMessage {
   fileType?: string | null;
   isWhisper?: boolean;
   whisperTo?: string[];
-  type?: 'MESSAGE' | 'SYSTEM';
+  type?: 'MESSAGE' | 'SYSTEM' | 'INVITE';
   deletedAt?: string | null;
   replyToId?: string | null;
   replyTo?: ChatMessage | null;
   reactions?: MessageReaction[];
   readBy?: { userId: string; readAt: string }[];
+  pending?: boolean;
 }
 
 export interface ConversationParticipant {
@@ -66,6 +67,7 @@ interface ChatState {
   prependMessages: (conversationId: string, messages: ChatMessage[], pagination?: PaginationState) => void;
   addMessage: (conversationId: string, message: ChatMessage) => void;
   updateMessage: (conversationId: string, messageId: string, patch: Partial<ChatMessage>) => void;
+  replaceMessage: (conversationId: string, oldId: string, newMsg: ChatMessage) => void;
   incrementUnread: (conversationId: string) => void;
   clearUnread: (conversationId: string) => void;
   totalUnread: () => number;
@@ -138,6 +140,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messagesByConversationId: {
           ...state.messagesByConversationId,
           [conversationId]: msgs.map((m) => (m.id === messageId ? { ...m, ...patch } : m)),
+        },
+      };
+    }),
+
+  replaceMessage: (conversationId, oldId, newMsg) =>
+    set((state) => {
+      const msgs = state.messagesByConversationId[conversationId] ?? [];
+      return {
+        messagesByConversationId: {
+          ...state.messagesByConversationId,
+          [conversationId]: msgs.map((m) => (m.id === oldId ? newMsg : m)),
         },
       };
     }),

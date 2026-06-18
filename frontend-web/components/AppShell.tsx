@@ -187,11 +187,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const avatarGradient = profile?.avatarColor || 'from-[#2563EB] to-[#60A5FA]';
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex flex-col md:flex-row h-screen overflow-hidden">
 
-      {/* ── Colonne 1 : Nav latérale (72px) ── */}
+      {/* ── Colonne 1 : Nav latérale — desktop uniquement ── */}
       <aside
-        className="flex flex-col items-center py-3 gap-1.5 flex-shrink-0 overflow-y-auto scrollbar-none"
+        className="hidden md:flex flex-col items-center py-3 gap-1.5 flex-shrink-0 overflow-y-auto scrollbar-none"
         style={{ width: 72, background: 'var(--sat-sidebar)', borderRight: '1px solid var(--sat-border)' }}
       >
         {/* Logo Saturn */}
@@ -311,9 +311,65 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* ── Contenu principal ── */}
-      <main className="flex-1 flex overflow-hidden">
+      <main className="flex-1 flex overflow-hidden min-h-0">
         {children}
       </main>
+
+      {/* ── Navigation mobile — bottom bar ── */}
+      <nav
+        className="md:hidden flex items-center justify-around flex-shrink-0 px-2 py-1 safe-area-bottom"
+        style={{ background: 'var(--sat-sidebar)', borderTop: '1px solid var(--sat-border)', height: 60 }}
+      >
+        {[
+          { href: '/chat', label: 'Messages', badge: totalUnread, icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+          )},
+          { href: '/friends', label: 'Amis', badge: 0, icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+          )},
+          { href: '/communities', label: 'Communautés', badge: 0, icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 21h18M5 21V7l7-4 7 4v14M9 9h.01M9 13h.01M9 17h.01M15 9h.01M15 13h.01M15 17h.01" />
+            </svg>
+          )},
+          { href: '/calls', label: 'Appels', badge: 0, icon: (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M6.62 10.79c1.44 2.83 3.76 5.15 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" />
+            </svg>
+          )},
+          { href: '/profile', label: 'Profil', badge: 0, icon: (
+            <div className="w-6 h-6 rounded-full overflow-hidden flex items-center justify-center text-[10px] font-black text-white flex-shrink-0"
+              style={{ background: profile?.image ? 'transparent' : `var(--sat-accent)` }}>
+              {profile?.image
+                ? <img src={profile.image} alt="" className="w-full h-full object-cover" />
+                : initial}
+            </div>
+          )},
+        ].map(({ href, label, badge, icon }) => {
+          const active = pathname.startsWith(href);
+          return (
+            <Link key={href} href={href} title={label}
+              className="relative flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition"
+              style={{ color: active ? 'var(--sat-accent)' : 'var(--sat-muted)' }}>
+              <div className="relative">
+                {icon}
+                {badge > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-0.5 rounded-full text-[9px] font-black flex items-center justify-center text-white"
+                    style={{ background: 'var(--sat-dnd)', border: '1.5px solid var(--sat-sidebar)' }}>
+                    {badge > 99 ? '99+' : badge}
+                  </span>
+                )}
+              </div>
+              <span className="text-[9px] font-semibold">{label}</span>
+            </Link>
+          );
+        })}
+      </nav>
     </div>
   );
 }
