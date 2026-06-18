@@ -90,6 +90,12 @@ export class CommunitiesController {
     return this.communitiesService.deleteChannel(id, user.id, channelId);
   }
 
+  @Post(':id/send-invite-dm')
+  async sendInviteDm(@Req() req: any, @Param('id') id: string, @Body('userId') userId: string) {
+    const user = await getSessionUser(req);
+    return this.communitiesService.sendCommunityInviteDm(id, user.id, userId);
+  }
+
   // Membres
   @Post(':id/members')
   async addMember(@Req() req: any, @Param('id') id: string, @Body('userId') userId: string) {

@@ -885,6 +885,9 @@ function ChatPageContent() {
                 )}
 
                 {currentMessages.map((msg: any, i: number) => {
+                  if (msg.type === 'INVITE') {
+                    return <CommunityInviteCard key={msg.id} msg={msg} />;
+                  }
                   if (msg.type === 'SYSTEM') {
                     return (
                       <div key={msg.id} className="flex items-center justify-center gap-2 my-2 px-4">
@@ -1328,5 +1331,62 @@ export default function ChatPage() {
     <Suspense fallback={<PageLoader label="Chargement des messages..." />}>
       <ChatPageContent />
     </Suspense>
+  );
+}
+
+// ── Carte d'invitation communauté ────────────────────────────────────────────
+function CommunityInviteCard({ msg }: { msg: any }) {
+  const meta = (msg.metadata ?? {}) as {
+    communityId: string;
+    communityName: string;
+    communityImage?: string;
+    token: string;
+  };
+  const [ignored, setIgnored] = useState(false);
+
+  if (ignored) return null;
+
+  return (
+    <div className="flex px-4 mt-3">
+      <div className="max-w-[320px] rounded-2xl overflow-hidden"
+        style={{ border: '1px solid var(--sat-border-2)', background: 'var(--sat-surface)' }}>
+        {/* Banner */}
+        <div className="h-14 flex items-center px-4 gap-3"
+          style={{ background: 'linear-gradient(135deg, rgba(37,99,235,0.15), rgba(96,165,250,0.1))' }}>
+          <div className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 flex items-center justify-center font-bold text-white text-base"
+            style={{ background: meta.communityImage ? 'transparent' : 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
+            {meta.communityImage
+              ? <img src={meta.communityImage} className="w-full h-full object-cover" alt="" />
+              : (meta.communityName || 'C').charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--sat-muted)' }}>
+              Invitation à une communauté
+            </p>
+            <p className="font-bold text-sm truncate" style={{ color: 'var(--sat-text)' }}>
+              {meta.communityName || 'Communauté'}
+            </p>
+          </div>
+        </div>
+        {/* Actions */}
+        <div className="px-4 py-3 flex gap-2">
+          <a href={`/communities/join/${meta.token}`}
+            className="flex-1 py-2 rounded-xl text-sm font-bold text-white text-center transition hover:opacity-90"
+            style={{ background: 'var(--sat-accent)' }}>
+            Rejoindre
+          </a>
+          <button onClick={() => setIgnored(true)}
+            className="px-4 py-2 rounded-xl text-sm font-bold transition"
+            style={{ background: 'var(--sat-hover)', color: 'var(--sat-muted)' }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#ef4444')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--sat-muted)')}>
+            Ignorer
+          </button>
+        </div>
+        <p className="px-4 pb-3 text-[10px]" style={{ color: 'var(--sat-faint)' }}>
+          De <strong style={{ color: 'var(--sat-muted)' }}>{msg.sender?.nickname || msg.sender?.email?.split('@')[0] || 'Quelqu\'un'}</strong>
+        </p>
+      </div>
+    </div>
   );
 }

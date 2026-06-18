@@ -533,12 +533,10 @@ function InviteModal({ communityId, communityName, friends, existingIds, onClose
   };
 
   const sendToDm = async (friend: any) => {
-    if (!inviteUrl || sending) return;
+    if (sending) return;
     setSending(friend.id);
     try {
-      const dm = await api.post('/conversations/dm', { userId: friend.id });
-      const msg = `Salut ! Je t'invite à rejoindre la communauté « ${communityName} » sur Saturn :\n${inviteUrl}`;
-      await api.post(`/conversations/${dm.data.id}/messages`, { content: msg });
+      await api.post(`/communities/${communityId}/send-invite-dm`, { userId: friend.id });
       setSent((prev) => new Set(prev).add(friend.id));
     } catch { /* silencieux */ }
     setSending(null);

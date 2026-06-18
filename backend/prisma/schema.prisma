@@ -121,6 +121,7 @@ model Message {
   whisperTo      String[]
   isWhisper      Boolean           @default(false)
   type           MessageType       @default(MESSAGE)
+  metadata       Json?
   deletedAt      DateTime?
   replyToId      String?
   replyTo        Message?          @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
@@ -145,6 +146,7 @@ model MessageReaction {
 enum MessageType {
   MESSAGE
   SYSTEM
+  INVITE
 }
 
 model Friendship {

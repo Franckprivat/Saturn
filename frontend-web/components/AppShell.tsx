@@ -1,12 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useRef, useState } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { api } from '@/lib/api';
 import { useChatStore } from '@/store/chatStore';
 import { useThemeStore } from '@/store/themeStore';
+import { useNotificationStore, type AppNotification } from '@/store/notificationStore';
+import { useChatSocket } from '@/hooks/useChatSocket';
 const AUTH_ROUTES = ['/login', '/signup', '/forgot-password', '/reset-password'];
 
 function NavIcon({
@@ -77,14 +79,98 @@ function NavIcon({
   );
 }
 
+function timeAgo(ts: string) {
+  const diff = Date.now() - new Date(ts).getTime();
+  if (diff < 60000) return 'À l\'instant';
+  if (diff < 3600000) return `il y a ${Math.floor(diff / 60000)} min`;
+  if (diff < 86400000) return `il y a ${Math.floor(diff / 3600000)} h`;
+  return `il y a ${Math.floor(diff / 86400000)} j`;
+}
+
+function NotificationDropdown({ onClose }: { onClose: () => void }) {
+  const { notifications, markAllRead, remove, clearAll } = useNotificationStore();
+  const router = useRouter();
+
+  useEffect(() => { markAllRead(); }, []);
+
+  const handleClick = (n: AppNotification) => {
+    remove(n.id);
+    router.push(n.href);
+    onClose();
+  };
+
+  return (
+    <div className="absolute left-16 bottom-2 z-[999] w-80 rounded-2xl shadow-2xl overflow-hidden"
+      style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)' }}>
+      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--sat-border)' }}>
+        <span className="font-bold text-sm" style={{ color: 'var(--sat-text)' }}>Notifications</span>
+        {notifications.length > 0 && (
+          <button onClick={clearAll} className="text-[10px] font-bold uppercase tracking-wider transition"
+            style={{ color: 'var(--sat-faint)' }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#ef4444')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--sat-faint)')}>
+            Tout effacer
+          </button>
+        )}
+      </div>
+      <div className="max-h-[360px] overflow-y-auto">
+        {notifications.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-10">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" style={{ color: 'var(--sat-faint)' }}>
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <p className="text-xs" style={{ color: 'var(--sat-faint)' }}>Aucune notification</p>
+          </div>
+        ) : (
+          notifications.map((n) => (
+            <button key={n.id} onClick={() => handleClick(n)}
+              className="w-full flex items-start gap-3 px-4 py-3 text-left transition"
+              style={{ borderBottom: '1px solid var(--sat-border)' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--sat-hover)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+              <div className="w-9 h-9 rounded-full flex-shrink-0 overflow-hidden flex items-center justify-center text-sm font-bold text-white"
+                style={{ background: n.image ? 'transparent' : 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
+                {n.image
+                  ? <img src={n.image} className="w-full h-full object-cover" alt="" />
+                  : n.title.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold truncate" style={{ color: 'var(--sat-text)' }}>{n.title}</p>
+                <p className="text-[11px] truncate" style={{ color: 'var(--sat-muted)' }}>{n.body}</p>
+                <p className="text-[10px] mt-0.5" style={{ color: 'var(--sat-faint)' }}>{timeAgo(n.timestamp)}</p>
+              </div>
+              {!n.read && (
+                <span className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0" style={{ background: 'var(--sat-accent)' }} />
+              )}
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<{ image?: string; avatarColor?: string; nickname?: string } | null>(null);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
   const totalUnread = useChatStore((s) => s.totalUnread());
+  const notifUnread = useNotificationStore((s) => s.unreadCount());
   const applyTheme = useThemeStore((s) => s.apply);
+  useChatSocket(); // maintient la connexion socket + écoute des notifications
 
   useEffect(() => { applyTheme(); }, []);
+
+  useEffect(() => {
+    if (!notifOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [notifOpen]);
 
   useEffect(() => {
     authClient.getSession().then(({ data }) => {
@@ -154,6 +240,47 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Spacer */}
         <div className="flex-1" />
+        <div className="w-8 h-px mb-1" style={{ background: 'var(--sat-border-2)' }} />
+
+        {/* Cloche notifications */}
+        <div ref={notifRef} className="relative flex justify-center">
+          <button
+            onClick={() => setNotifOpen((v) => !v)}
+            title="Notifications"
+            className="relative w-12 h-12 flex items-center justify-center transition-all duration-200"
+            style={{
+              borderRadius: notifOpen ? '30%' : '50%',
+              background: notifOpen ? 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent3))' : 'var(--sat-hover)',
+              color: notifOpen ? '#fff' : 'var(--sat-muted)',
+              boxShadow: notifOpen ? '0 4px 18px var(--sat-accent-glow)' : 'none',
+            }}
+            onMouseEnter={(e) => {
+              if (!notifOpen) {
+                (e.currentTarget as HTMLButtonElement).style.borderRadius = '30%';
+                (e.currentTarget as HTMLButtonElement).style.color = '#fff';
+                (e.currentTarget as HTMLButtonElement).style.background = 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent3))';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!notifOpen) {
+                (e.currentTarget as HTMLButtonElement).style.borderRadius = '50%';
+                (e.currentTarget as HTMLButtonElement).style.color = 'var(--sat-muted)';
+                (e.currentTarget as HTMLButtonElement).style.background = 'var(--sat-hover)';
+              }
+            }}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            {notifUnread > 0 && (
+              <span className="absolute -bottom-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-black flex items-center justify-center text-white"
+                style={{ background: 'var(--sat-dnd)', border: '2px solid var(--sat-sidebar)' }}>
+                {notifUnread > 99 ? '99+' : notifUnread}
+              </span>
+            )}
+          </button>
+          {notifOpen && <NotificationDropdown onClose={() => setNotifOpen(false)} />}
+        </div>
         <div className="w-8 h-px mb-1" style={{ background: 'var(--sat-border-2)' }} />
 
         {/* Avatar utilisateur */}

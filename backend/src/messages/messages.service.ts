@@ -129,6 +129,23 @@ export class MessagesService {
     });
   }
 
+  async createCommunityInviteMessage(
+    senderId: string,
+    conversationId: string,
+    meta: { communityId: string; communityName: string; communityImage?: string | null; token?: string | null },
+  ) {
+    return this.prisma.message.create({
+      data: {
+        senderId,
+        conversationId,
+        content: `Invitation à rejoindre ${meta.communityName}`,
+        type: 'INVITE',
+        metadata: meta,
+      },
+      include: MESSAGE_INCLUDE,
+    });
+  }
+
   async deleteMessage(messageId: string, userId: string) {
     const msg = await this.prisma.message.findUnique({
       where: { id: messageId },

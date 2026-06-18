@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { authClient } from '@/lib/auth-client';
 import { usePresenceStore } from '@/store/presenceStore';
+import { useNotificationStore } from '@/store/notificationStore';
 
 let socketSingleton: Socket | null = null;
 
@@ -28,6 +29,10 @@ export function useChatSocket() {
 
         socketSingleton.on('user_offline', ({ userId }: { userId: string }) => {
           setOffline(userId);
+        });
+
+        socketSingleton.on('notification', (data: any) => {
+          useNotificationStore.getState().add(data);
         });
       }
 

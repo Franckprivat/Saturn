@@ -1,5 +1,8 @@
 import { ForbiddenException, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConversationsService } from '../conversations/conversations.service';
+import { MessagesService } from '../messages/messages.service';
+import { ChatGateway } from '../chat/chat.gateway';
 import { randomBytes } from 'crypto';
 
 type Role = 'OWNER' | 'ADMIN' | 'MODERATOR' | 'MEMBER';
@@ -14,7 +17,12 @@ const MEMBER_SELECT = {
 
 @Injectable()
 export class CommunitiesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly conversationsService: ConversationsService,
+    private readonly messagesService: MessagesService,
+    private readonly chatGateway: ChatGateway,
+  ) {}
 
   private async getMembership(communityId: string, userId: string) {
     const m = await this.prisma.communityMember.findUnique({
@@ -235,6 +243,36 @@ export class CommunitiesService {
   }
 
   // ── Invitations ──────────────────────────────────────────────────────────
+
+  async sendCommunityInviteDm(communityId: string, actorId: string, targetUserId: string) {
+    await this.requireRole(communityId, actorId, 'ADMIN');
+
+    let community = await this.prisma.community.findUnique({
+      where: { id: communityId },
+      select: { name: true, image: true, inviteToken: true },
+    });
+    if (!community) throw new NotFoundException('Communauté introuvable');
+
+    if (!community.inviteToken) {
+      const updated = await this.prisma.community.update({
+        where: { id: communityId },
+        data: { inviteToken: randomBytes(8).toString('hex') },
+        select: { name: true, image: true, inviteToken: true },
+      });
+      community = updated;
+    }
+
+    const dm = await this.conversationsService.getOrCreateDmConversation(actorId, targetUserId);
+    const msg = await this.messagesService.createCommunityInviteMessage(actorId, dm.id, {
+      communityId,
+      communityName: community.name,
+      communityImage: community.image,
+      token: community.inviteToken,
+    });
+
+    this.chatGateway.server.to(dm.id).emit('new_message', msg);
+    return { ok: true };
+  }
 
   async getInvite(communityId: string, userId: string) {
     await this.getMembership(communityId, userId);

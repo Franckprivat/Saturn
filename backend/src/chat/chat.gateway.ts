@@ -66,6 +66,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (!session?.user) { client.disconnect(); return; }
 
       client.user = { id: session.user.id, email: session.user.email };
+      // Salle personnelle pour les notifications ciblées
+      await client.join(`user:${session.user.id}`);
       const prev = this.onlineUsers.get(session.user.id) ?? 0;
       this.onlineUsers.set(session.user.id, prev + 1);
       if (prev === 0) this.server.emit('user_online', { userId: session.user.id });
@@ -182,6 +184,33 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     } else {
       this.server.to(data.conversationId).emit('new_message', message);
     }
+
+    // Notification push aux participants absents de la salle
+    const senderName = (message as any).sender?.nickname || client.user.email?.split('@')[0] || 'Quelqu\'un';
+    const preview = message.content ? message.content.substring(0, 80) : '📎 Fichier';
+    const socketsInRoom = await this.server.in(data.conversationId).fetchSockets();
+    const usersInRoom = new Set(socketsInRoom.map((s: any) => s.user?.id).filter(Boolean));
+
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: data.conversationId },
+      include: { participants: { select: { userId: true } } },
+    });
+    if (conv) {
+      for (const p of conv.participants) {
+        if (p.userId !== client.user.id && !usersInRoom.has(p.userId)) {
+          this.server.to(`user:${p.userId}`).emit('notification', {
+            type: 'message',
+            title: senderName,
+            body: preview,
+            href: `/chat?conversationId=${data.conversationId}`,
+            conversationId: data.conversationId,
+            image: (message as any).sender?.image,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+    }
+
     return message;
   }
 
