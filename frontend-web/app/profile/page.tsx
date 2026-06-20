@@ -21,6 +21,33 @@ const AVATAR_COLORS = [
   'from-[#F97316] to-[#EAB308]',
 ];
 
+const DICEBEAR_STYLES = [
+  { key: 'adventurer', label: 'Aventurier' },
+  { key: 'avataaars', label: 'Avataaars' },
+  { key: 'big-smile', label: 'Sourire' },
+  { key: 'bottts', label: 'Robots' },
+  { key: 'croodles', label: 'Croodles' },
+  { key: 'fun-emoji', label: 'Emoji' },
+  { key: 'lorelei', label: 'Lorelei' },
+  { key: 'micah', label: 'Micah' },
+  { key: 'miniavs', label: 'Mini' },
+  { key: 'notionists', label: 'Notion' },
+  { key: 'open-peeps', label: 'Peeps' },
+  { key: 'personas', label: 'Personas' },
+  { key: 'pixel-art', label: 'Pixel' },
+  { key: 'thumbs', label: 'Thumbs' },
+  { key: 'big-ears', label: 'Big Ears' },
+  { key: 'dylan', label: 'Dylan' },
+];
+
+function dicebearUrl(style: string, seed: string) {
+  return `https://api.dicebear.com/9.x/${style}/svg?seed=${encodeURIComponent(seed)}&backgroundColor=transparent`;
+}
+
+function makeSeeds(count = 11) {
+  return Array.from({ length: count }, () => Math.random().toString(36).slice(2, 10));
+}
+
 const SOCIAL_FIELDS = [
   { key: 'github', label: 'GitHub', placeholder: 'https://github.com/username', icon: '⌂' },
   { key: 'twitter', label: 'X / Twitter', placeholder: 'https://x.com/username', icon: '𝕏' },
@@ -33,6 +60,13 @@ const SOCIAL_FIELDS = [
 function classNames(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(' ');
 }
+
+// Classes réutilisables (thématisées)
+const CARD = 'bg-[var(--sat-surface)] border border-[var(--sat-border)] shadow-sm rounded-2xl';
+const LABEL = 'text-[10px] uppercase tracking-widest text-[var(--sat-muted)] font-semibold';
+const FIELD = 'w-full bg-[var(--sat-hover)] border border-[var(--sat-border-2)] rounded-xl px-4 py-2.5 text-sm text-[var(--sat-text)] focus:outline-none focus:border-[var(--sat-accent)] transition placeholder-[var(--sat-faint)]';
+const BTN_PRIMARY = 'w-full py-3 rounded-2xl bg-[var(--sat-accent)] hover:bg-[var(--sat-accent2)] text-white disabled:opacity-50 text-sm font-semibold transition';
+const BTN_DANGER = 'w-full py-3 rounded-2xl bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-[#EF4444] text-sm font-semibold transition';
 
 export default function ProfilePage() {
   const router = useRouter();
@@ -48,6 +82,10 @@ export default function ProfilePage() {
   const [bio, setBio] = useState('');
   const [avatarColor, setAvatarColor] = useState(AVATAR_COLORS[0]);
   const [image, setImage] = useState<string | null>(null);
+
+  // Sélecteur DiceBear
+  const [diceStyle, setDiceStyle] = useState(DICEBEAR_STYLES[0].key);
+  const [diceSeeds, setDiceSeeds] = useState<string[]>(() => makeSeeds());
 
   // Social links
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
@@ -160,23 +198,26 @@ export default function ProfilePage() {
 
   const initial = (user.nickname || user.name || user.email).charAt(0).toUpperCase();
   const displayName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.name;
+  const seedName = nickname || user.email?.split('@')[0] || 'saturn';
+  const isDicebear = !!image && image.includes('api.dicebear.com');
+  const diceList = [seedName, ...diceSeeds];
 
   return (
-    <div className="flex-1 flex flex-col items-center overflow-y-auto px-4 py-8">
+    <div className="flex-1 flex flex-col items-center overflow-y-auto px-4 py-8 text-[var(--sat-text)]">
       {/* Ambient glow */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute top-[-10%] left-[40%] w-[600px] h-[600px] bg-[#2563EB]/8 rounded-full blur-[140px]" />
+        <div className="absolute top-[-10%] left-[40%] w-[600px] h-[600px] rounded-full blur-[140px]" style={{ background: 'var(--sat-accent-glow)' }} />
       </div>
 
       <div className="relative z-10 w-full max-w-lg space-y-6">
 
         {/* Header card */}
-        <div className="bg-white border border-[#2563EB]/15 shadow-sm rounded-3xl p-6 flex flex-col items-center gap-4">
+        <div className={`${CARD} p-6 flex flex-col items-center gap-4`}>
           {/* Avatar */}
           <div className="relative">
             <div
               className={classNames(
-                'w-24 h-24 rounded-3xl flex items-center justify-center text-4xl font-black shadow-2xl shadow-[#2563EB]/20 overflow-hidden',
+                'w-24 h-24 rounded-3xl flex items-center justify-center text-4xl font-black text-white shadow-2xl shadow-[#2563EB]/20 overflow-hidden',
                 !image ? `bg-gradient-to-br ${avatarColor}` : '',
               )}
             >
@@ -188,7 +229,7 @@ export default function ProfilePage() {
             </div>
             <button
               onClick={() => fileRef.current?.click()}
-              className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-[#2563EB] hover:bg-[#60A5FA] flex items-center justify-center text-sm transition shadow-lg"
+              className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-[var(--sat-accent)] hover:bg-[var(--sat-accent2)] text-white flex items-center justify-center text-sm transition shadow-lg"
               title="Changer la photo"
             >
               +
@@ -196,21 +237,21 @@ export default function ProfilePage() {
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
           </div>
           <div className="text-center">
-            <h1 className="text-xl font-black text-[#1E293B]">{user.nickname || displayName || user.email}</h1>
-            <p className="text-sm text-[#64748B]">{user.email}</p>
-            {user.bio && <p className="text-sm text-[#475569] mt-1 max-w-xs">{user.bio}</p>}
+            <h1 className="text-xl font-black text-[var(--sat-text)]">{user.nickname || displayName || user.email}</h1>
+            <p className="text-sm text-[var(--sat-muted)]">{user.email}</p>
+            {user.bio && <p className="text-sm text-[var(--sat-muted)] mt-1 max-w-xs">{user.bio}</p>}
           </div>
         </div>
 
         {/* Tabs */}
-        <div className="flex bg-white border border-[#2563EB]/15 shadow-sm rounded-2xl p-1 gap-1">
+        <div className={`flex ${CARD} p-1 gap-1`}>
           {(['profil', 'liens', 'parametres'] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => { setTab(t); setMessage(''); setGroupMessage(''); }}
               className={classNames(
                 'flex-1 py-2 rounded-xl text-xs font-semibold transition capitalize',
-                tab === t ? 'bg-[#2563EB] text-white' : 'text-[#475569] hover:text-[#1E293B]',
+                tab === t ? 'bg-[var(--sat-accent)] text-white' : 'text-[var(--sat-muted)] hover:text-[var(--sat-text)]',
               )}
             >
               {t === 'profil' ? 'Profil' : t === 'liens' ? 'Liens' : 'Paramètres'}
@@ -223,8 +264,8 @@ export default function ProfilePage() {
           <div className="space-y-4">
             {/* Couleur avatar */}
             {!image && (
-              <div className="bg-white border border-[#2563EB]/15 shadow-sm rounded-2xl p-4 space-y-3">
-                <p className="text-[10px] uppercase tracking-widest text-[#64748B] font-semibold">Couleur de l'avatar</p>
+              <div className={`${CARD} p-4 space-y-3`}>
+                <p className={LABEL}>Couleur de l'avatar</p>
                 <div className="flex gap-2 flex-wrap">
                   {AVATAR_COLORS.map((c) => (
                     <button
@@ -232,48 +273,108 @@ export default function ProfilePage() {
                       onClick={() => setAvatarColor(c)}
                       className={classNames(
                         `w-8 h-8 rounded-xl bg-gradient-to-br ${c} transition ring-2`,
-                        avatarColor === c ? 'ring-[#2563EB] scale-110' : 'ring-transparent hover:scale-105',
+                        avatarColor === c ? 'ring-[var(--sat-accent)] scale-110' : 'ring-transparent hover:scale-105',
                       )}
                     />
                   ))}
                 </div>
-                {image && (
-                  <button onClick={() => setImage(null)} className="text-xs text-[#EF4444] hover:text-red-300 transition">
-                    Supprimer la photo
-                  </button>
-                )}
               </div>
             )}
 
             {image && (
-              <div className="bg-white border border-[#2563EB]/15 shadow-sm rounded-2xl p-4 flex items-center justify-between">
-                <span className="text-xs text-[#475569]">Photo de profil uploadée</span>
+              <div className={`${CARD} p-4 flex items-center justify-between`}>
+                <span className="text-xs text-[var(--sat-muted)]">
+                  {isDicebear ? 'Avatar DiceBear sélectionné' : 'Photo de profil uploadée'}
+                </span>
                 <button onClick={() => setImage(null)} className="text-xs text-[#EF4444] hover:text-red-300 transition">
                   Supprimer
                 </button>
               </div>
             )}
 
-            {/* Infos */}
-            <div className="bg-white border border-[#2563EB]/15 shadow-sm rounded-2xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#2563EB]/12">
-                <p className="text-[10px] uppercase tracking-widest text-[#64748B] font-semibold">Informations</p>
+            {/* Avatars DiceBear */}
+            <div className={`${CARD} p-4 space-y-3`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className={LABEL}>Avatar généré</p>
+                  <p className="text-xs text-[var(--sat-faint)] mt-0.5">Choisis un style, puis une variante.</p>
+                </div>
+                <button
+                  onClick={() => setDiceSeeds(makeSeeds())}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--sat-hover)] hover:bg-[var(--sat-active)] border border-[var(--sat-border-2)] rounded-xl text-xs font-semibold text-[var(--sat-accent)] transition flex-shrink-0"
+                  title="Générer de nouvelles variantes"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                  </svg>
+                  Régénérer
+                </button>
               </div>
-              <div className="divide-y divide-[#2563EB]/12">
+
+              {/* Styles (chips défilantes) */}
+              <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                {DICEBEAR_STYLES.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => setDiceStyle(key)}
+                    className={classNames(
+                      'px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition flex-shrink-0',
+                      diceStyle === key ? 'bg-[var(--sat-accent)] text-white' : 'bg-[var(--sat-hover)] text-[var(--sat-muted)] hover:bg-[var(--sat-active)]',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Grille de variantes */}
+              <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                {diceList.map((seed, i) => {
+                  const url = dicebearUrl(diceStyle, seed);
+                  const active = image === url;
+                  return (
+                    <button
+                      key={`${diceStyle}-${seed}-${i}`}
+                      onClick={() => setImage(url)}
+                      title={i === 0 ? 'Basé sur ton pseudo' : 'Variante aléatoire'}
+                      className={classNames(
+                        'relative aspect-square rounded-2xl p-1.5 flex items-center justify-center transition ring-2',
+                        active ? 'ring-[var(--sat-accent)] bg-[var(--sat-hover)] scale-105' : 'ring-transparent bg-[var(--sat-hover)] hover:bg-[var(--sat-active)] hover:scale-105',
+                      )}
+                    >
+                      <img src={url} alt={`Avatar ${i + 1}`} className="w-full h-full object-contain" loading="lazy" />
+                      {active && (
+                        <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[var(--sat-accent)] flex items-center justify-center">
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Infos */}
+            <div className={`${CARD} overflow-hidden`}>
+              <div className="px-4 py-3 border-b border-[var(--sat-border)]">
+                <p className={LABEL}>Informations</p>
+              </div>
+              <div className="divide-y divide-[var(--sat-border)]">
                 <div className="px-4 py-3 flex justify-between items-center">
-                  <span className="text-xs text-[#475569]">Prénom</span>
+                  <span className="text-xs text-[var(--sat-muted)]">Prénom</span>
                   <span className="text-sm font-medium">{user.firstName || '—'}</span>
                 </div>
                 <div className="px-4 py-3 flex justify-between items-center">
-                  <span className="text-xs text-[#475569]">Nom</span>
+                  <span className="text-xs text-[var(--sat-muted)]">Nom</span>
                   <span className="text-sm font-medium">{user.lastName || '—'}</span>
                 </div>
                 <div className="px-4 py-3 flex justify-between items-center">
-                  <span className="text-xs text-[#475569]">Email</span>
+                  <span className="text-xs text-[var(--sat-muted)]">Email</span>
                   <span className="text-sm font-medium">{user.email}</span>
                 </div>
                 <div className="px-4 py-3 flex justify-between items-center">
-                  <span className="text-xs text-[#475569]">Membre depuis</span>
+                  <span className="text-xs text-[var(--sat-muted)]">Membre depuis</span>
                   <span className="text-sm font-medium">
                     {new Date(user.createdAt).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
                   </span>
@@ -282,47 +383,48 @@ export default function ProfilePage() {
             </div>
 
             {/* Pseudonyme */}
-            <div className="bg-white border border-[#2563EB]/15 shadow-sm rounded-2xl p-4 space-y-2">
-              <label className="text-[10px] uppercase tracking-widest text-[#64748B] font-semibold">Pseudonyme</label>
+            <div className={`${CARD} p-4 space-y-2`}>
+              <label className={LABEL}>Pseudonyme</label>
               <input
                 type="text"
                 value={nickname}
                 onChange={(e) => setNickname(e.target.value)}
                 placeholder="Ton pseudo affiché..."
-                className="w-full bg-[#EFF6FF] border border-[#2563EB]/25 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#2563EB] transition placeholder-[#94A3B8]"
+                className={FIELD}
               />
             </div>
 
             {/* Bio */}
-            <div className="bg-white border border-[#2563EB]/15 shadow-sm rounded-2xl p-4 space-y-2">
-              <label className="text-[10px] uppercase tracking-widest text-[#64748B] font-semibold">Bio</label>
+            <div className={`${CARD} p-4 space-y-2`}>
+              <label className={LABEL}>Bio</label>
               <textarea
                 value={bio}
                 onChange={(e) => setBio(e.target.value)}
                 placeholder="Parle de toi en quelques mots..."
                 rows={3}
                 maxLength={280}
-                className="w-full bg-[#EFF6FF] border border-[#2563EB]/25 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#2563EB] transition placeholder-[#94A3B8] resize-none"
+                className={`${FIELD} resize-none`}
               />
-              <p className="text-right text-[10px] text-[#94A3B8]">{bio.length}/280</p>
+              <p className="text-right text-[10px] text-[var(--sat-faint)]">{bio.length}/280</p>
             </div>
 
             {/* QR Code profil */}
-            <div className="bg-white border border-[#2563EB]/15 shadow-sm rounded-2xl p-4 space-y-3">
+            <div className={`${CARD} p-4 space-y-3`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-[10px] uppercase tracking-widest text-[#64748B] font-semibold">QR Code profil</p>
-                  <p className="text-xs text-[#94A3B8] mt-0.5">Partage ton profil Saturn</p>
+                  <p className={LABEL}>QR Code profil</p>
+                  <p className="text-xs text-[var(--sat-faint)] mt-0.5">Partage ton profil Saturn</p>
                 </div>
                 <button
                   onClick={() => setShowQR((v) => !v)}
-                  className="px-3 py-1.5 bg-[#EFF6FF] hover:bg-[#DBEAFE] border border-[#2563EB]/25 rounded-xl text-xs text-[#475569] hover:text-[#1E293B] transition"
+                  className="px-3 py-1.5 bg-[var(--sat-hover)] hover:bg-[var(--sat-active)] border border-[var(--sat-border-2)] rounded-xl text-xs text-[var(--sat-muted)] hover:text-[var(--sat-text)] transition"
                 >
                   {showQR ? 'Masquer' : 'Afficher'}
                 </button>
               </div>
               {showQR && (
                 <div className="flex flex-col items-center gap-3 pt-2">
+                  {/* Fond blanc volontaire : nécessaire pour la lisibilité du QR */}
                   <div className="p-3 bg-white rounded-2xl shadow-xl">
                     <QRCodeSVG
                       value={`saturn://user/${user.id}`}
@@ -331,7 +433,7 @@ export default function ProfilePage() {
                       includeMargin={false}
                     />
                   </div>
-                  <p className="text-[10px] text-[#94A3B8]">ID : {user.id}</p>
+                  <p className="text-[10px] text-[var(--sat-faint)]">ID : {user.id}</p>
                 </div>
               )}
             </div>
@@ -342,18 +444,11 @@ export default function ProfilePage() {
               </p>
             )}
 
-            <button
-              onClick={handleSaveProfil}
-              disabled={saving}
-              className="w-full py-3 rounded-2xl bg-[#2563EB] hover:bg-[#60A5FA] disabled:opacity-50 text-sm font-semibold transition"
-            >
+            <button onClick={handleSaveProfil} disabled={saving} className={BTN_PRIMARY}>
               {saving ? 'Sauvegarde...' : 'Sauvegarder le profil'}
             </button>
 
-            <button
-              onClick={handleLogout}
-              className="w-full py-3 rounded-2xl bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-[#EF4444] text-sm font-semibold transition"
-            >
+            <button onClick={handleLogout} className={BTN_DANGER}>
               Se déconnecter
             </button>
           </div>
@@ -362,29 +457,29 @@ export default function ProfilePage() {
         {/* ── TAB LIENS ── */}
         {tab === 'liens' && (
           <div className="space-y-4">
-            <div className="bg-white border border-[#2563EB]/15 shadow-sm rounded-2xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#2563EB]/12">
-                <p className="text-[10px] uppercase tracking-widest text-[#64748B] font-semibold">Réseaux sociaux</p>
-                <p className="text-xs text-[#94A3B8] mt-0.5">Tes liens seront visibles sur ton profil public.</p>
+            <div className={`${CARD} overflow-hidden`}>
+              <div className="px-4 py-3 border-b border-[var(--sat-border)]">
+                <p className={LABEL}>Réseaux sociaux</p>
+                <p className="text-xs text-[var(--sat-faint)] mt-0.5">Tes liens seront visibles sur ton profil public.</p>
               </div>
-              <div className="divide-y divide-[#2563EB]/12">
+              <div className="divide-y divide-[var(--sat-border)]">
                 {SOCIAL_FIELDS.map(({ key, label, placeholder, icon }) => (
                   <div key={key} className="px-4 py-3 flex items-center gap-3">
-                    <span className="text-lg w-6 text-center text-[#475569] flex-shrink-0">{icon}</span>
+                    <span className="text-lg w-6 text-center text-[var(--sat-muted)] flex-shrink-0">{icon}</span>
                     <div className="flex-1">
-                      <p className="text-[10px] text-[#64748B] mb-1">{label}</p>
+                      <p className="text-[10px] text-[var(--sat-muted)] mb-1">{label}</p>
                       <input
                         type="url"
                         value={socialLinks[key] || ''}
                         onChange={(e) => setSocialLinks((prev) => ({ ...prev, [key]: e.target.value }))}
                         placeholder={placeholder}
-                        className="w-full bg-transparent text-sm text-[#1E293B] placeholder-[#94A3B8] focus:outline-none focus:text-[#1E293B] transition"
+                        className="w-full bg-transparent text-sm text-[var(--sat-text)] placeholder-[var(--sat-faint)] focus:outline-none transition"
                       />
                     </div>
                     {socialLinks[key] && (
                       <button
                         onClick={() => setSocialLinks((prev) => { const n = { ...prev }; delete n[key]; return n; })}
-                        className="text-[#94A3B8] hover:text-[#EF4444] transition text-xs flex-shrink-0"
+                        className="text-[var(--sat-faint)] hover:text-[#EF4444] transition text-xs flex-shrink-0"
                       >
                         ✕
                       </button>
@@ -400,11 +495,7 @@ export default function ProfilePage() {
               </p>
             )}
 
-            <button
-              onClick={handleSaveLiens}
-              disabled={saving}
-              className="w-full py-3 rounded-2xl bg-[#2563EB] hover:bg-[#60A5FA] disabled:opacity-50 text-sm font-semibold transition"
-            >
+            <button onClick={handleSaveLiens} disabled={saving} className={BTN_PRIMARY}>
               {saving ? 'Sauvegarde...' : 'Sauvegarder les liens'}
             </button>
           </div>
@@ -415,19 +506,19 @@ export default function ProfilePage() {
           <div className="space-y-4">
 
             {/* Thème */}
-            <div className="bg-white border border-[#2563EB]/15 shadow-sm rounded-2xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#2563EB]/12">
-                <p className="text-[10px] uppercase tracking-widest text-[#64748B] font-semibold">Apparence</p>
+            <div className={`${CARD} overflow-hidden`}>
+              <div className="px-4 py-3 border-b border-[var(--sat-border)]">
+                <p className={LABEL}>Apparence</p>
               </div>
               <div className="p-4 space-y-4">
                 <div>
-                  <p className="text-xs text-[#475569] mb-2">Thème</p>
+                  <p className="text-xs text-[var(--sat-muted)] mb-2">Thème</p>
                   <div className="grid grid-cols-3 gap-2">
                     {(Object.entries(THEMES) as [ThemeName, typeof THEMES[ThemeName]][]).map(([key, t]) => (
                       <button
                         key={key}
                         onClick={() => setTheme(key)}
-                        style={{ background: t.bg, border: `2px solid ${theme === key ? '#2563EB' : t.border}` }}
+                        style={{ background: t.bg, border: `2px solid ${theme === key ? 'var(--sat-accent)' : t.border}` }}
                         className="rounded-xl py-2 px-3 text-left transition hover:scale-[1.02]"
                       >
                         <div className="w-6 h-1.5 rounded-full mb-1.5" style={{ background: t.surface, border: `1px solid ${t.border}` }} />
@@ -437,7 +528,7 @@ export default function ProfilePage() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs text-[#475569] mb-2">Couleur d'accent</p>
+                  <p className="text-xs text-[var(--sat-muted)] mb-2">Couleur d'accent</p>
                   <div className="flex gap-2 flex-wrap">
                     {(Object.entries(ACCENTS) as [AccentColor, typeof ACCENTS[AccentColor]][]).map(([key, a]) => (
                       <button
@@ -446,8 +537,8 @@ export default function ProfilePage() {
                         title={a.label}
                         style={{ background: `linear-gradient(135deg, ${a.primary}, ${a.secondary})` }}
                         className={classNames(
-                          'w-8 h-8 rounded-xl transition ring-2 ring-offset-2 ring-offset-white',
-                          accent === key ? 'ring-[#2563EB] scale-110' : 'ring-transparent hover:scale-105',
+                          'w-8 h-8 rounded-xl transition ring-2 ring-offset-2 ring-offset-[var(--sat-surface)]',
+                          accent === key ? 'ring-[var(--sat-accent)] scale-110' : 'ring-transparent hover:scale-105',
                         )}
                       />
                     ))}
@@ -457,10 +548,10 @@ export default function ProfilePage() {
             </div>
 
             {/* Créer un groupe */}
-            <div className="bg-white border border-[#2563EB]/15 shadow-sm rounded-2xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#2563EB]/12">
-                <p className="text-[10px] uppercase tracking-widest text-[#64748B] font-semibold">Créer un groupe</p>
-                <p className="text-xs text-[#94A3B8] mt-0.5">Sélectionne des amis pour démarrer une conversation de groupe.</p>
+            <div className={`${CARD} overflow-hidden`}>
+              <div className="px-4 py-3 border-b border-[var(--sat-border)]">
+                <p className={LABEL}>Créer un groupe</p>
+                <p className="text-xs text-[var(--sat-faint)] mt-0.5">Sélectionne des amis pour démarrer une conversation de groupe.</p>
               </div>
 
               <div className="p-4 space-y-3">
@@ -469,11 +560,11 @@ export default function ProfilePage() {
                   value={groupName}
                   onChange={(e) => setGroupName(e.target.value)}
                   placeholder="Nom du groupe..."
-                  className="w-full bg-[#EFF6FF] border border-[#2563EB]/25 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#2563EB] transition placeholder-[#94A3B8]"
+                  className={FIELD}
                 />
 
                 {friends.length === 0 ? (
-                  <p className="text-xs text-[#64748B] py-2">Aucun ami disponible. Ajoute des amis d'abord.</p>
+                  <p className="text-xs text-[var(--sat-muted)] py-2">Aucun ami disponible. Ajoute des amis d'abord.</p>
                 ) : (
                   <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
                     {friends.map((f) => (
@@ -481,13 +572,13 @@ export default function ProfilePage() {
                         key={f.id}
                         onClick={() => toggleFriend(f.id)}
                         className={classNames(
-                          'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left',
+                          'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left border',
                           selectedFriends.includes(f.id)
-                            ? 'bg-[#2563EB]/20 border border-[#2563EB]/40'
-                            : 'bg-white border border-[#2563EB]/12 hover:bg-[#EFF6FF]',
+                            ? 'bg-[var(--sat-accent-glow)] border-[var(--sat-accent)]'
+                            : 'bg-[var(--sat-surface)] border-[var(--sat-border)] hover:bg-[var(--sat-hover)]',
                         )}
                       >
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#2563EB] to-[#60A5FA] flex items-center justify-center text-xs font-bold flex-shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#2563EB] to-[#60A5FA] flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
                           {(f.nickname || f.email).charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -495,7 +586,7 @@ export default function ProfilePage() {
                         </div>
                         <div className={classNames(
                           'w-4 h-4 rounded-full border-2 flex-shrink-0 transition',
-                          selectedFriends.includes(f.id) ? 'bg-[#2563EB] border-[#2563EB]' : 'border-[#2563EB]/30',
+                          selectedFriends.includes(f.id) ? 'bg-[var(--sat-accent)] border-[var(--sat-accent)]' : 'border-[var(--sat-border-2)]',
                         )} />
                       </button>
                     ))}
@@ -503,7 +594,7 @@ export default function ProfilePage() {
                 )}
 
                 {selectedFriends.length > 0 && (
-                  <p className="text-xs text-[#475569]">{selectedFriends.length} ami(s) sélectionné(s)</p>
+                  <p className="text-xs text-[var(--sat-muted)]">{selectedFriends.length} ami(s) sélectionné(s)</p>
                 )}
 
                 {groupMessage && (
@@ -512,26 +603,19 @@ export default function ProfilePage() {
                   </p>
                 )}
 
-                <button
-                  onClick={handleCreateGroup}
-                  disabled={creatingGroup}
-                  className="w-full py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#60A5FA] disabled:opacity-50 text-sm font-semibold transition"
-                >
+                <button onClick={handleCreateGroup} disabled={creatingGroup} className={`${BTN_PRIMARY} !py-2.5 !rounded-xl`}>
                   {creatingGroup ? 'Création...' : 'Créer le groupe'}
                 </button>
               </div>
             </div>
 
             {/* Compte */}
-            <div className="bg-white border border-[#2563EB]/15 shadow-sm rounded-2xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#2563EB]/12">
-                <p className="text-[10px] uppercase tracking-widest text-[#64748B] font-semibold">Compte</p>
+            <div className={`${CARD} overflow-hidden`}>
+              <div className="px-4 py-3 border-b border-[var(--sat-border)]">
+                <p className={LABEL}>Compte</p>
               </div>
               <div className="p-4">
-                <button
-                  onClick={handleLogout}
-                  className="w-full py-3 rounded-xl bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-[#EF4444] text-sm font-semibold transition"
-                >
+                <button onClick={handleLogout} className={`${BTN_DANGER} !rounded-xl`}>
                   Se déconnecter
                 </button>
               </div>

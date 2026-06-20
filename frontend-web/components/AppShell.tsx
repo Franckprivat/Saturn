@@ -26,16 +26,6 @@ function NavIcon({
 }) {
   return (
     <Link href={href} title={label} className="group relative flex justify-center">
-      {/* Indicateur actif */}
-      <span
-        className="absolute left-0 top-1/2 -translate-y-1/2 rounded-r-full transition-all duration-200"
-        style={{
-          width: 4,
-          height: active ? 36 : 0,
-          opacity: active ? 1 : 0,
-          background: 'linear-gradient(var(--sat-accent),var(--sat-accent3))',
-        }}
-      />
       <div
         className="relative w-12 h-12 flex items-center justify-center transition-all duration-200"
         style={{
@@ -121,23 +111,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         style={{ width: 72, background: 'var(--sat-sidebar)', borderRight: '1px solid var(--sat-border)' }}
       >
         {/* Logo Saturn */}
-        <Link href="/" title="Saturn" className="group relative flex justify-center mb-1">
-          <div
-            className="w-12 h-12 flex items-center justify-center transition-all duration-200"
-            style={{ borderRadius: '50%', background: 'var(--sat-surface)' }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLDivElement).style.borderRadius = '30%';
-              (e.currentTarget as HTMLDivElement).style.background = 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))';
-              (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 20px var(--sat-accent-glow)';
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLDivElement).style.borderRadius = '50%';
-              (e.currentTarget as HTMLDivElement).style.background = 'var(--sat-surface)';
-              (e.currentTarget as HTMLDivElement).style.boxShadow = 'none';
-            }}
-          >
-            <SaturnLogo size={26} />
-          </div>
+        <Link href="/" title="Saturn" className="group relative flex items-center justify-center w-12 h-12 mb-1">
+          <SaturnLogo size={34} className="transition-transform duration-200 group-hover:scale-110" />
         </Link>
 
         {/* Séparateur */}

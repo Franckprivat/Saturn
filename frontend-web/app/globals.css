@@ -2,41 +2,41 @@
 
 /* ─── Saturn Design System ──────────────────────────────────────────────── */
 :root {
-  /* Brand palette */
-  --color-primary:   #2563EB;
-  --color-secondary: #60A5FA;
-  --color-bg:        #F8FAFC;
-  --color-text:      #1E293B;
+  /* Brand palette — esthétique Claude (papier chaud + argile) */
+  --color-primary:   #C96442;
+  --color-secondary: #DA8A6A;
+  --color-bg:        #F5F4EE;
+  --color-text:      #2B2A27;
   --color-success:   #10B981;
   --color-error:     #EF4444;
 
   /* Layout surfaces */
   --sat-void:     var(--color-bg);
-  --sat-sidebar:  #FFFFFF;
-  --sat-panel:    #FFFFFF;
+  --sat-sidebar:  #EFEDE4;
+  --sat-panel:    #FBFAF7;
   --sat-main:     var(--color-bg);
-  --sat-surface:  #FFFFFF;
-  --sat-hover:    #F1F5F9;
-  --sat-active:   #E2E8F0;
+  --sat-surface:  #FBFAF7;
+  --sat-hover:    #EDEBE2;
+  --sat-active:   #E4E1D6;
 
   /* Glass */
-  --sat-glass:        rgba(255, 255, 255, 0.88);
-  --sat-glass-border: rgba(37, 99, 235, 0.12);
+  --sat-glass:        rgba(245, 244, 238, 0.85);
+  --sat-glass-border: rgba(120, 90, 60, 0.14);
 
   /* Borders */
-  --sat-border:   rgba(30, 41, 59, 0.08);
-  --sat-border-2: rgba(30, 41, 59, 0.14);
+  --sat-border:   rgba(60, 52, 40, 0.10);
+  --sat-border-2: rgba(60, 52, 40, 0.16);
 
   /* Text */
   --sat-text:  var(--color-text);
-  --sat-muted: #64748B;
-  --sat-faint: #94A3B8;
+  --sat-muted: #6B655C;
+  --sat-faint: #9C968B;
 
   /* Accent */
   --sat-accent:      var(--color-primary);
   --sat-accent2:     var(--color-secondary);
   --sat-accent3:     var(--color-secondary);
-  --sat-accent-glow: rgba(37, 99, 235, 0.22);
+  --sat-accent-glow: rgba(201, 100, 66, 0.22);
 
   /* Status */
   --sat-online:  var(--color-success);
@@ -52,6 +52,9 @@
   --muted:   var(--sat-muted);
   --accent:  var(--sat-accent);
   --accent2: var(--sat-accent2);
+
+  /* Logo : 0 = noir (thèmes clairs), 1 = blanc (thèmes sombres) */
+  --logo-invert: 0;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -62,23 +65,55 @@ html, body {
   padding: 0;
   background: var(--sat-void);
   color: var(--sat-text);
-  font-family: 'gg sans', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: var(--font-jakarta), 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
   font-size: 15px;
   line-height: 1.375;
   -webkit-font-smoothing: antialiased;
 }
 
+/* Titres en serif éditorial — signature Claude */
+h1 {
+  font-family: var(--font-serif), Georgia, 'Times New Roman', serif;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+
+.font-display {
+  font-family: var(--font-serif), Georgia, 'Times New Roman', serif;
+}
+
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(30, 41, 59, 0.15); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(30, 41, 59, 0.25); }
+::-webkit-scrollbar-thumb { background: var(--sat-border-2); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--sat-muted); }
 
-::selection { background: rgba(37, 99, 235, 0.2); }
+::selection { background: var(--sat-accent-glow); }
 
 @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
 @keyframes pulse-dot { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
 
 .animate-fade-in { animation: fadeIn 0.15s ease-out; }
+
+/* ─── Auth screen animations ─────────────────────────────────────────────── */
+@keyframes auth-float   { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
+@keyframes auth-float-2 { 0%,100% { transform: translateY(0); } 50% { transform: translateY(12px); } }
+@keyframes auth-blob    { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(20px,-30px) scale(1.08); } }
+@keyframes auth-rise    { from { opacity:0; transform: translateY(16px); } to { opacity:1; transform: translateY(0); } }
+@keyframes auth-pop     { from { opacity:0; transform: scale(0.9) translateY(8px); } to { opacity:1; transform: scale(1) translateY(0); } }
+
+/* Loader plein écran */
+@keyframes loader-breathe { 0%,100% { transform: scale(0.88); opacity: 0.4; } 50% { transform: scale(1.08); opacity: 0.85; } }
+@keyframes loader-bob     { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+
+.auth-float   { animation: auth-float   6s ease-in-out infinite; }
+.auth-float-2 { animation: auth-float-2 7s ease-in-out infinite; }
+.auth-blob    { animation: auth-blob   14s ease-in-out infinite; }
+.auth-rise    { animation: auth-rise 0.6s cubic-bezier(0.22,1,0.36,1) both; }
+.auth-pop     { animation: auth-pop  0.5s cubic-bezier(0.22,1,0.36,1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-float, .auth-float-2, .auth-blob, .auth-rise, .auth-pop { animation: none; }
+}
 
 .glass {
   background: var(--sat-glass);
