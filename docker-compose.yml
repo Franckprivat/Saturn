@@ -43,7 +43,8 @@ services:
     env_file:
       - .env
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost/api
+      NEXT_PUBLIC_API_URL: http://localhost/api   # axios → Nginx → backend (routes NestJS)
+      NEXT_PUBLIC_AUTH_URL: http://localhost       # better-auth → Nginx → /auth/* backend
       WATCHPACK_POLLING: "true"
       PORT: "3000"
     volumes:

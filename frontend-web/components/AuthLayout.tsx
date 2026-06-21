@@ -145,9 +145,9 @@ function Showcase({ tagline }: { tagline: [string, string] }) {
       <div className="absolute bottom-0 right-0 w-96 h-96 rounded-full blur-3xl pointer-events-none auth-float-2" style={{ background: 'rgba(218,138,106,0.18)' }} />
 
       {/* Logo */}
-      <div className="flex items-center gap-2.5 relative z-10 auth-rise">
-        <SaturnLogo size={36} tone="dark" />
-        <span className="font-black text-xl tracking-tight text-[#2B2A27]">Saturn</span>
+      <div className="flex items-center gap-3 relative z-10 auth-rise">
+        <SaturnLogo size={72} tone="dark" glow />
+        <span className="font-display font-semibold text-xl tracking-tight text-[#2B2A27]">Saturn</span>
       </div>
 
       {/* Phone */}
@@ -174,9 +174,9 @@ function MobileHero({ tagline }: { tagline: [string, string] }) {
     >
       <div className="absolute -top-16 -right-10 w-56 h-56 rounded-full blur-3xl pointer-events-none auth-blob" style={{ background: 'rgba(201,100,66,0.18)' }} />
       <div className="relative z-10 flex flex-col items-center text-center">
-        <div className="flex items-center gap-2.5 mb-4 auth-rise">
-          <SaturnLogo size={38} tone="dark" />
-          <span className="font-black text-2xl tracking-tight text-[#2B2A27]">Saturn</span>
+        <div className="flex items-center gap-3 mb-4 auth-rise">
+          <SaturnLogo size={64} tone="dark" glow />
+          <span className="font-display font-semibold text-2xl tracking-tight text-[#2B2A27]">Saturn</span>
         </div>
         {/* Mini bulles teaser */}
         <div className="flex items-end gap-2 mb-4 auth-pop" style={{ animationDelay: '0.1s' }}>

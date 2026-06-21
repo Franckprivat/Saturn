@@ -18,20 +18,20 @@ export function Spinner({ size = 24, className = '' }: SpinnerProps) {
   );
 }
 
-/** Écran de chargement plein — logo Saturn (anneau qui tourne + halo + respiration) */
+/** Écran de chargement plein — badge Saturn (anneau qui tourne + halo + respiration) */
 export function PageLoader({ label = 'Chargement...' }: { label?: string }) {
   return (
     <div
-      className="flex-1 w-full h-full flex flex-col items-center justify-center gap-6"
+      className="flex-1 w-full h-full flex flex-col items-center justify-center gap-8"
       style={{ background: 'var(--sat-void)' }}
     >
-      <div className="relative flex items-center justify-center" style={{ width: 96, height: 96 }}>
-        {/* Halo qui respire */}
+      <div className="relative flex items-center justify-center" style={{ width: 160, height: 160 }}>
+        {/* Halo large qui respire */}
         <span
           className="absolute rounded-full"
           style={{
-            width: 96, height: 96,
-            background: 'radial-gradient(circle, var(--sat-accent-glow), transparent 70%)',
+            width: 160, height: 160,
+            background: 'radial-gradient(circle, var(--sat-accent-glow), transparent 65%)',
             animation: 'loader-breathe 1.8s ease-in-out infinite',
           }}
         />
@@ -39,22 +39,30 @@ export function PageLoader({ label = 'Chargement...' }: { label?: string }) {
         <span
           className="absolute rounded-full animate-spin"
           style={{
-            width: 88, height: 88,
+            width: 148, height: 148,
             border: '3px solid var(--sat-border-2)',
             borderTopColor: 'var(--sat-accent)',
           }}
         />
-        {/* Logo (respiration douce, adaptatif au thème) */}
+        {/* Logo avec respiration douce */}
         <img
           src="/logo.png"
           alt="Saturn"
-          width={48}
-          height={48}
+          width={112}
+          height={112}
           className="relative"
-          style={{ objectFit: 'contain', display: 'block', filter: 'invert(var(--logo-invert, 0))', animation: 'loader-bob 1.8s ease-in-out infinite' }}
+          style={{
+            objectFit: 'contain',
+            display: 'block',
+            filter: 'invert(var(--logo-invert, 0)) drop-shadow(0 0 12px var(--sat-accent-glow)) drop-shadow(0 0 24px var(--sat-accent-glow)) drop-shadow(0 4px 10px rgba(0,0,0,0.15))',
+            animation: 'loader-bob 1.8s ease-in-out infinite',
+          }}
         />
       </div>
-      <span className="text-sm font-medium tracking-wide" style={{ color: 'var(--sat-muted)' }}>{label}</span>
+      <div className="flex flex-col items-center gap-1">
+        <span className="font-display text-lg font-medium" style={{ color: 'var(--sat-text)' }}>Saturn</span>
+        <span className="text-xs tracking-widest uppercase" style={{ color: 'var(--sat-muted)' }}>{label}</span>
+      </div>
     </div>
   );
 }

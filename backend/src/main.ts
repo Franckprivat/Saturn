@@ -1,20 +1,37 @@
 import { NestFactory } from '@nestjs/core';
+import { ExpressAdapter } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import helmet from 'helmet';
+import * as express from 'express';
+import { toNodeHandler } from 'better-auth/node';
+import { auth } from './auth/better-auth.instance';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // 1. On crée l'Express app manuellement
+  const expressApp = express();
 
-  // ── Limite de taille des requêtes ─────────────────────────────────────────
-  app.use(require('express').json({ limit: '6mb' }));
-  app.use(require('express').urlencoded({ extended: true, limit: '6mb' }));
+  // 2. Better-auth en PREMIER — avant tout body parser, avant NestJS
+  //    /auth      → via Nginx (Nginx rewrite strip /api/ → /auth/...)
+  //    /api/auth  → accès direct local (npm run dev, sans Nginx)
+  const authHandler = toNodeHandler(auth);
+  expressApp.use('/auth', authHandler);
+  expressApp.use('/api/auth', authHandler);
 
-  // ── Helmet : headers de sécurité HTTP ────────────────────────────────────
+  // 3. Body parser pour tous les autres endpoints NestJS
+  expressApp.use(express.json({ limit: '6mb' }));
+  expressApp.use(express.urlencoded({ extended: true, limit: '6mb' }));
+
+  // 4. NestJS s'installe SUR cette Express app — ses routes viennent après better-auth
+  const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp), {
+    bodyParser: false, // on gère le body parser nous-mêmes ci-dessus
+  });
+
+  // ── Helmet ────────────────────────────────────────────────────────────────
   app.use(
     helmet({
-      crossOriginEmbedderPolicy: false, // nécessaire pour les uploads et socket.io
-      contentSecurityPolicy: false,     // géré côté frontend (Next.js)
+      crossOriginEmbedderPolicy: false,
+      contentSecurityPolicy: false,
     }),
   );
 
@@ -22,8 +39,8 @@ async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,
-      whitelist: true,          // supprime les champs inconnus silencieusement
-      forbidNonWhitelisted: false, // ne casse pas les controllers sans DTO
+      whitelist: true,
+      forbidNonWhitelisted: false,
     }),
   );
 

@@ -153,6 +153,10 @@ export const useThemeStore = create<ThemeState>()(
         document.documentElement.style.colorScheme = t.isDark ? 'dark' : 'light';
       },
     }),
-    { name: 'saturn-theme', version: 1 },
+    {
+      name: 'saturn-theme',
+      version: 1,
+      migrate: () => ({ theme: 'claude' as ThemeName, accent: 'clay' as AccentColor }),
+    },
   ),
 );
