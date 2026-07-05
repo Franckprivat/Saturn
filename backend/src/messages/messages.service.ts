@@ -21,6 +21,9 @@ const MESSAGE_INCLUDE = {
   readBy: {
     select: { userId: true, readAt: true },
   },
+  deliveredTo: {
+    select: { userId: true, deliveredAt: true },
+  },
 };
 
 @Injectable()
@@ -85,6 +88,27 @@ export class MessagesService {
     });
   }
 
+  /** Dans un DM, on ne peut plus écrire si l'un des deux a bloqué l'autre. */
+  private async ensureNotBlocked(userId: string, conversationId: string) {
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { type: true, participants: { select: { userId: true } } },
+    });
+    if (conv?.type !== 'DM') return;
+    const other = conv.participants.find((p) => p.userId !== userId);
+    if (!other) return;
+    const blocked = await this.prisma.friendship.count({
+      where: {
+        status: 'BLOCKED',
+        OR: [
+          { requesterId: userId, addresseeId: other.userId },
+          { requesterId: other.userId, addresseeId: userId },
+        ],
+      },
+    });
+    if (blocked) throw new ForbiddenException('Vous ne pouvez pas envoyer de message à cet utilisateur');
+  }
+
   async createMessage(
     userId: string,
     conversationId: string,
@@ -94,6 +118,19 @@ export class MessagesService {
     replyToId?: string,
   ) {
     await this.ensureParticipant(userId, conversationId);
+    await this.ensureNotBlocked(userId, conversationId);
+
+    // Une réponse doit cibler un message de la même conversation
+    if (replyToId) {
+      const target = await this.prisma.message.findUnique({
+        where: { id: replyToId },
+        select: { conversationId: true },
+      });
+      if (!target || target.conversationId !== conversationId) {
+        throw new NotFoundException('Message cité introuvable dans cette conversation');
+      }
+    }
+
     const isWhisper = !!(whisperTo && whisperTo.length > 0);
     return this.prisma.message.create({
       data: {
@@ -146,6 +183,9 @@ export class MessagesService {
     });
   }
 
+  /** Fenêtre pendant laquelle on peut supprimer son propre message pour tous. */
+  private static readonly DELETE_FOR_ALL_WINDOW_MS = 24 * 60 * 60 * 1000;
+
   async deleteMessage(messageId: string, userId: string) {
     const msg = await this.prisma.message.findUnique({
       where: { id: messageId },
@@ -159,6 +199,17 @@ export class MessagesService {
     if (msg.senderId !== userId && !isAdmin) {
       throw new ForbiddenException('Cannot delete this message');
     }
+    // Ses propres messages : suppression pour tous limitée dans le temps
+    // (au-delà, l'option « supprimer pour moi » côté client reste disponible).
+    // Les admins de groupe conservent la modération sans limite.
+    if (msg.senderId === userId && !isAdmin) {
+      const age = Date.now() - new Date(msg.createdAt).getTime();
+      if (age > MessagesService.DELETE_FOR_ALL_WINDOW_MS) {
+        throw new ForbiddenException(
+          'Ce message est trop ancien pour être supprimé pour tout le monde',
+        );
+      }
+    }
 
     return this.prisma.message.update({
       where: { id: messageId },
@@ -167,10 +218,34 @@ export class MessagesService {
     });
   }
 
-  async markAsRead(conversationId: string, userId: string) {
+  /** Marque comme « distribués » les messages arrivés sur l'appareil de `userId`. */
+  async markAsDelivered(conversationId: string, userId: string) {
     await this.ensureParticipant(userId, conversationId);
     const messages = await this.prisma.message.findMany({
-      where: { conversationId, senderId: { not: userId } },
+      where: {
+        conversationId,
+        senderId: { not: userId },
+        deliveredTo: { none: { userId } },
+      },
+      select: { id: true },
+    });
+    if (!messages.length) return { count: 0 };
+    await this.prisma.deliveryReceipt.createMany({
+      data: messages.map((m) => ({ messageId: m.id, userId })),
+      skipDuplicates: true,
+    });
+    return { count: messages.length };
+  }
+
+  async markAsRead(conversationId: string, userId: string) {
+    await this.ensureParticipant(userId, conversationId);
+    // Uniquement les messages pas encore lus (évite de réécrire tous les reçus)
+    const messages = await this.prisma.message.findMany({
+      where: {
+        conversationId,
+        senderId: { not: userId },
+        readBy: { none: { userId } },
+      },
       select: { id: true },
     });
     if (!messages.length) return { count: 0 };

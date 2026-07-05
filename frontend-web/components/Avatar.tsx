@@ -1,5 +1,8 @@
 'use client';
 
+import { useState } from 'react';
+import { mediaUrl } from '@/lib/media';
+
 const DEFAULT_GRADIENT = 'from-[#2563EB] to-[#60A5FA]';
 
 interface AvatarProps {
@@ -20,19 +23,32 @@ const SIZES = {
   lg: 'w-14 h-14 text-lg',
 };
 
+/**
+ * Avatar utilisateur : image résolue via mediaUrl, avec retour automatique
+ * aux initiales sur dégradé si l'image ne charge pas (URL morte, 404, réseau).
+ */
 export function Avatar({ user, size = 'md', className = '' }: AvatarProps) {
+  const [failed, setFailed] = useState(false);
   const initial = (user.nickname || user.email || '?').charAt(0).toUpperCase();
   const gradient = user.avatarColor || DEFAULT_GRADIENT;
   const sizeClass = SIZES[size];
+  const src = !failed ? mediaUrl(user.image) : undefined;
 
   return (
     <div
       className={`${sizeClass} rounded-full flex items-center justify-center font-bold flex-shrink-0 overflow-hidden ${
-        user.image ? '' : `bg-gradient-to-br ${gradient}`
+        src ? '' : `bg-gradient-to-br ${gradient}`
       } ${className}`}
     >
-      {user.image ? (
-        <img src={user.image} alt={initial} className="w-full h-full object-cover" />
+      {src ? (
+        <img
+          src={src}
+          alt={initial}
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailed(true)}
+          className="w-full h-full object-cover"
+        />
       ) : (
         <span className="text-white">{initial}</span>
       )}

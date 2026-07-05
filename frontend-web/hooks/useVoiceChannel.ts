@@ -10,6 +10,8 @@ const ICE_CONFIG: RTCConfiguration = {
   ],
 };
 
+const SPEAKING_THRESHOLD = 0.045; // niveau RMS au-delà duquel on considère que ça parle
+
 export interface VoicePeer {
   userId: string;
   muted: boolean;
@@ -19,12 +21,14 @@ export interface VoicePeer {
 /**
  * Salon vocal façon Discord — topologie mesh.
  * Chaque participant ouvre une connexion WebRTC directe avec chaque autre.
- * Le nouvel arrivant initie l'offre vers les pairs déjà présents.
+ * Détection de parole (anneau vert) + sourdine (deafen) en local.
  */
 export function useVoiceChannel(socket: Socket | null) {
   const [activeChannelId, setActiveChannelId] = useState<string | null>(null);
   const [peers, setPeers] = useState<Record<string, VoicePeer>>({}); // socketId -> peer
   const [selfMuted, setSelfMuted] = useState(false);
+  const [selfSpeaking, setSelfSpeaking] = useState(false);
+  const [deafened, setDeafened] = useState(false);
   const [connecting, setConnecting] = useState(false);
 
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -32,14 +36,74 @@ export function useVoiceChannel(socket: Socket | null) {
   const audiosRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const activeRef = useRef<string | null>(null);
   const selfMutedRef = useRef(false);
+  const deafenedRef = useRef(false);
+
+  // ── Détection de parole (Web Audio) ──
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analysersRef = useRef<Map<string, { analyser: AnalyserNode; data: Uint8Array }>>(new Map());
+  const rafRef = useRef<number | null>(null);
+
+  const ensureAudioCtx = useCallback(() => {
+    if (!audioCtxRef.current) {
+      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      if (Ctx) audioCtxRef.current = new Ctx();
+    }
+    return audioCtxRef.current;
+  }, []);
+
+  const tick = useCallback(() => {
+    const analysers = analysersRef.current;
+    analysers.forEach(({ analyser, data }, id) => {
+      analyser.getByteTimeDomainData(data as any);
+      let sum = 0;
+      for (let i = 0; i < data.length; i++) {
+        const v = (data[i] - 128) / 128;
+        sum += v * v;
+      }
+      const rms = Math.sqrt(sum / data.length);
+      const speaking = rms > SPEAKING_THRESHOLD;
+      if (id === 'self') {
+        setSelfSpeaking(selfMutedRef.current ? false : speaking);
+      } else {
+        setPeers((prev) => {
+          const p = prev[id];
+          if (!p || p.speaking === speaking) return prev;
+          return { ...prev, [id]: { ...p, speaking } };
+        });
+      }
+    });
+    rafRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  const startLoop = useCallback(() => {
+    if (rafRef.current == null) rafRef.current = requestAnimationFrame(tick);
+  }, [tick]);
+
+  const attachAnalyser = useCallback((id: string, stream: MediaStream) => {
+    const ctx = ensureAudioCtx();
+    if (!ctx) return;
+    try {
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      analysersRef.current.set(id, { analyser, data: new Uint8Array(analyser.fftSize) });
+      startLoop();
+    } catch { /* stream sans piste audio */ }
+  }, [ensureAudioCtx, startLoop]);
+
+  const detachAnalyser = useCallback((id: string) => {
+    analysersRef.current.delete(id);
+  }, []);
 
   const cleanupPeer = useCallback((socketId: string) => {
     const pc = pcsRef.current.get(socketId);
     if (pc) { pc.close(); pcsRef.current.delete(socketId); }
     const a = audiosRef.current.get(socketId);
     if (a) { a.srcObject = null; a.remove(); audiosRef.current.delete(socketId); }
+    detachAnalyser(socketId);
     setPeers((prev) => { const n = { ...prev }; delete n[socketId]; return n; });
-  }, []);
+  }, [detachAnalyser]);
 
   const createPeer = useCallback((socketId: string, userId: string, initiator: boolean) => {
     if (!socket) return null;
@@ -61,7 +125,9 @@ export function useVoiceChannel(socket: Socket | null) {
         document.body.appendChild(a);
       }
       a.srcObject = e.streams[0];
+      a.muted = deafenedRef.current;
       a.play().catch(() => {});
+      attachAnalyser(socketId, e.streams[0]);
     };
     pc.onconnectionstatechange = () => {
       if (['failed', 'closed'].includes(pc.connectionState)) cleanupPeer(socketId);
@@ -79,7 +145,7 @@ export function useVoiceChannel(socket: Socket | null) {
       };
     }
     return pc;
-  }, [socket, cleanupPeer]);
+  }, [socket, cleanupPeer, attachAnalyser]);
 
   const leave = useCallback(() => {
     const ch = activeRef.current;
@@ -90,9 +156,15 @@ export function useVoiceChannel(socket: Socket | null) {
     audiosRef.current.clear();
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
     localStreamRef.current = null;
+    // Stop analysers
+    if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    analysersRef.current.clear();
+    audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
     activeRef.current = null;
     setActiveChannelId(null);
     setPeers({});
+    setSelfSpeaking(false);
   }, [socket]);
 
   const join = useCallback(async (channelId: string) => {
@@ -105,6 +177,7 @@ export function useVoiceChannel(socket: Socket | null) {
       if (selfMutedRef.current) stream.getAudioTracks().forEach((t) => { t.enabled = false; });
       activeRef.current = channelId;
       setActiveChannelId(channelId);
+      attachAnalyser('self', stream);
       socket.emit('voice_join', { channelId });
     } catch {
       activeRef.current = null;
@@ -112,14 +185,33 @@ export function useVoiceChannel(socket: Socket | null) {
     } finally {
       setConnecting(false);
     }
-  }, [socket, leave]);
+  }, [socket, leave, attachAnalyser]);
 
   const toggleMute = useCallback(() => {
     setSelfMuted((m) => {
       const next = !m;
       selfMutedRef.current = next;
       localStreamRef.current?.getAudioTracks().forEach((t) => { t.enabled = !next; });
+      if (next) setSelfSpeaking(false);
       if (socket && activeRef.current) socket.emit('voice_mute', { channelId: activeRef.current, muted: next });
+      return next;
+    });
+  }, [socket]);
+
+  const toggleDeafen = useCallback(() => {
+    setDeafened((d) => {
+      const next = !d;
+      deafenedRef.current = next;
+      // Couper / rétablir l'audio entrant
+      audiosRef.current.forEach((a) => { a.muted = next; });
+      // Discord : se rendre sourd coupe aussi le micro
+      if (next && !selfMutedRef.current) {
+        setSelfMuted(true);
+        selfMutedRef.current = true;
+        localStreamRef.current?.getAudioTracks().forEach((t) => { t.enabled = false; });
+        setSelfSpeaking(false);
+        if (socket && activeRef.current) socket.emit('voice_mute', { channelId: activeRef.current, muted: true });
+      }
       return next;
     });
   }, [socket]);
@@ -165,5 +257,5 @@ export function useVoiceChannel(socket: Socket | null) {
 
   useEffect(() => () => { if (activeRef.current) leave(); }, [leave]);
 
-  return { activeChannelId, peers, selfMuted, connecting, join, leave, toggleMute };
+  return { activeChannelId, peers, selfMuted, selfSpeaking, deafened, connecting, join, leave, toggleMute, toggleDeafen };
 }

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { api } from '@/lib/api';
+import { compressImage, mediaUrl } from '@/lib/media';
 import { QRCodeSVG } from 'qrcode.react';
 import { useThemeStore, THEMES, ACCENTS, type ThemeName, type AccentColor } from '@/store/themeStore';
 import { PageLoader } from '@/components/Spinner';
@@ -116,21 +117,32 @@ export default function ProfilePage() {
       }).catch(() => {
         setUser(data.user);
       });
-    });
+    }).catch(() => {});
 
     api.get('/friends').then((res) => setFriends(res.data)).catch(() => {});
   }, []);
 
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      setMessage('Image trop lourde (max 2 Mo).');
+    if (file.size > 15 * 1024 * 1024) {
+      setMessage('Image trop lourde (max 15 Mo).');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => setImage(reader.result as string);
-    reader.readAsDataURL(file);
+    setSaving(true);
+    try {
+      // Compression automatique avant upload (une photo de profil n'a pas
+      // besoin de peser plusieurs Mo)
+      const { file: optimized } = await compressImage(file);
+      const fd = new FormData();
+      fd.append('file', optimized);
+      const res = await api.post('/upload', fd);
+      setImage(res.data.url);
+    } catch {
+      setMessage("Erreur lors de l'upload de la photo.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSaveProfil = async () => {
@@ -222,7 +234,7 @@ export default function ProfilePage() {
               )}
             >
               {image ? (
-                <img src={image} alt="avatar" className="w-full h-full object-cover" />
+                <img src={mediaUrl(image)} alt="avatar" className="w-full h-full object-cover" />
               ) : (
                 initial
               )}

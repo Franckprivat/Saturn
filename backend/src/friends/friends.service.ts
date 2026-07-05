@@ -10,12 +10,28 @@ export class FriendsService {
       return [];
     }
 
+    // Les utilisateurs bloqués (dans un sens ou l'autre) n'apparaissent pas
+    const blocked = await this.prisma.friendship.findMany({
+      where: {
+        status: 'BLOCKED',
+        OR: [{ requesterId: currentUserId }, { addresseeId: currentUserId }],
+      },
+      select: { requesterId: true, addresseeId: true },
+    });
+    const blockedIds = blocked.map((f) =>
+      f.requesterId === currentUserId ? f.addresseeId : f.requesterId,
+    );
+
     return this.prisma.user.findMany({
       where: {
         AND: [
           { id: { not: currentUserId } },
+          { id: { notIn: blockedIds } },
           {
-            nickname: { contains: query, mode: 'insensitive' },
+            OR: [
+              { nickname: { contains: query, mode: 'insensitive' } },
+              { email: { equals: query.trim(), mode: 'insensitive' } },
+            ],
           },
         ],
       },
@@ -47,6 +63,16 @@ export class FriendsService {
     });
 
     if (existing) {
+      if (existing.status === 'BLOCKED') {
+        throw new ForbiddenException('Impossible d\'envoyer une demande à cet utilisateur');
+      }
+      // Demande croisée : l'autre m'avait déjà demandé → on devient amis directement
+      if (existing.status === 'PENDING' && existing.requesterId === addresseeId) {
+        return this.prisma.friendship.update({
+          where: { id: existing.id },
+          data: { status: 'ACCEPTED' },
+        });
+      }
       return existing;
     }
 
@@ -61,6 +87,7 @@ export class FriendsService {
   async getFriendRequests(userId: string) {
     return this.prisma.friendship.findMany({
       where: {
+        status: { in: ['PENDING', 'ACCEPTED'] },
         OR: [
           { requesterId: userId },
           { addresseeId: userId },
@@ -119,6 +146,12 @@ export class FriendsService {
       throw new ForbiddenException('You cannot respond to this request');
     }
 
+    // Seule une demande en attente peut être acceptée/refusée — empêche
+    // notamment un utilisateur bloqué de « s'auto-débloquer » en acceptant
+    if (friendship.status !== 'PENDING') {
+      throw new ForbiddenException('This request has already been handled');
+    }
+
     if (!accept) {
       await this.prisma.friendship.delete({ where: { id: friendshipId } });
       return { status: 'DECLINED' };
@@ -130,6 +163,21 @@ export class FriendsService {
     });
 
     return updated;
+  }
+
+  async removeFriend(userId: string, friendId: string) {
+    const friendship = await this.prisma.friendship.findFirst({
+      where: {
+        status: 'ACCEPTED',
+        OR: [
+          { requesterId: userId, addresseeId: friendId },
+          { requesterId: friendId, addresseeId: userId },
+        ],
+      },
+    });
+    if (!friendship) throw new NotFoundException('Vous n\'êtes pas amis avec cet utilisateur');
+    await this.prisma.friendship.delete({ where: { id: friendship.id } });
+    return { ok: true };
   }
 
   async blockUser(requesterId: string, targetId: string) {
@@ -162,6 +210,28 @@ export class FriendsService {
         ],
       },
     });
+  }
+
+  /** Mini-profil pour les notifications temps réel. */
+  getUserBrief(id: string) {
+    return this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, nickname: true, email: true, image: true },
+    });
+  }
+
+  /** True si l'un des deux utilisateurs a bloqué l'autre. */
+  async isBlockedBetween(userId: string, otherUserId: string): Promise<boolean> {
+    const blocked = await this.prisma.friendship.count({
+      where: {
+        status: 'BLOCKED',
+        OR: [
+          { requesterId: userId, addresseeId: otherUserId },
+          { requesterId: otherUserId, addresseeId: userId },
+        ],
+      },
+    });
+    return blocked > 0;
   }
 
   async ensureAreFriends(userId: string, otherUserId: string) {

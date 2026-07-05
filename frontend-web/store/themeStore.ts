@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type ThemeName = 'claude' | 'dark' | 'light' | 'solarized' | 'midnight' | 'forest';
-export type AccentColor = 'clay' | 'purple' | 'blue' | 'green' | 'red' | 'orange' | 'pink';
+export type ThemeName = 'amber' | 'dark' | 'light' | 'solarized' | 'midnight' | 'forest';
+export type AccentColor = 'amber' | 'clay' | 'purple' | 'blue' | 'green' | 'red' | 'orange' | 'pink';
 
 export interface ThemePalette {
   label: string;
@@ -23,8 +23,8 @@ export interface ThemePalette {
 }
 
 export const THEMES: Record<ThemeName, ThemePalette> = {
-  claude: {
-    label: 'Claude', isDark: false,
+  amber: {
+    label: 'Amber', isDark: false,
     bg: '#F5F4EE', sidebar: '#EFEDE4', panel: '#FBFAF7', surface: '#FBFAF7',
     hover: '#EDEBE2', active: '#E4E1D6',
     glass: 'rgba(245,244,238,0.85)', glassBorder: 'rgba(120,90,60,0.14)',
@@ -82,6 +82,7 @@ export interface AccentPalette {
 }
 
 export const ACCENTS: Record<AccentColor, AccentPalette> = {
+  amber:  { label: 'Ambre',  primary: '#C17629', secondary: '#D48E45', hex: '#C17629', glow: 'rgba(193,118,41,0.22)' },
   clay:   { label: 'Argile', primary: '#C96442', secondary: '#DA8A6A', hex: '#C96442', glow: 'rgba(201,100,66,0.22)' },
   blue:   { label: 'Bleu',   primary: '#2563EB', secondary: '#60A5FA', hex: '#2563EB', glow: 'rgba(37,99,235,0.22)' },
   purple: { label: 'Violet', primary: '#7C3AED', secondary: '#A78BFA', hex: '#7C3AED', glow: 'rgba(124,58,237,0.22)' },
@@ -102,8 +103,8 @@ interface ThemeState {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
-      theme: 'claude',
-      accent: 'clay',
+      theme: 'amber',
+      accent: 'amber',
       setTheme: (theme) => { set({ theme }); get().apply(); },
       setAccent: (accent) => { set({ accent }); get().apply(); },
       apply: () => {
@@ -146,8 +147,9 @@ export const useThemeStore = create<ThemeState>()(
         v('--accent2', a.secondary);
         v('--accent-hex', a.hex);
 
-        // Logo adaptatif (noir sur clair, blanc sur sombre)
-        v('--logo-invert', t.isDark ? '1' : '0');
+        // Logo adaptatif (noir sur clair, blanc sur sombre).
+        // Le fichier /logo.png est BLANC : invert(1) le rend noir pour les thèmes clairs.
+        v('--logo-invert', t.isDark ? '0' : '1');
 
         // Schéma natif (scrollbars, inputs, color-scheme)
         document.documentElement.style.colorScheme = t.isDark ? 'dark' : 'light';
@@ -156,7 +158,7 @@ export const useThemeStore = create<ThemeState>()(
     {
       name: 'saturn-theme',
       version: 1,
-      migrate: () => ({ theme: 'claude' as ThemeName, accent: 'clay' as AccentColor }),
+      migrate: () => ({ theme: 'amber' as ThemeName, accent: 'amber' as AccentColor }),
     },
   ),
 );

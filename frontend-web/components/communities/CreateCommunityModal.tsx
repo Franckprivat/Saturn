@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { api } from '@/lib/api';
+import { mediaUrl } from '@/lib/media';
 import { Spinner } from '@/components/Spinner';
 import { toast } from '@/components/Toast';
 
@@ -26,7 +27,7 @@ export function CreateCommunityModal({ onClose, onCreated }: CreateCommunityModa
     try {
       const form = new FormData();
       form.append('file', file);
-      const res = await api.post('/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const res = await api.post('/upload', form);
       setImage(res.data.url);
     } catch { toast('Erreur upload', 'error'); }
     e.target.value = '';
@@ -83,7 +84,7 @@ export function CreateCommunityModal({ onClose, onCreated }: CreateCommunityModa
                 className="w-20 h-20 rounded-full flex items-center justify-center overflow-hidden transition"
                 style={{ background: image ? 'transparent' : 'var(--sat-hover)', border: '2px dashed var(--sat-border-2)' }}>
                 {image
-                  ? <img src={image} className="w-full h-full object-cover" alt="" />
+                  ? <img src={mediaUrl(image)} className="w-full h-full object-cover" alt="" />
                   : <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--sat-muted)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>}
               </button>
               <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhoto} />

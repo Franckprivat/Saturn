@@ -82,10 +82,11 @@ export class UploadController {
       };
     }
 
-    // Disk fallback
-    const baseUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+    // Stockage disque : URL RELATIVE. Le client la résout vers l'origine API
+    // courante (lib/media.ts) — les fichiers restent valides quel que soit
+    // l'environnement (dev direct :3001, Docker/nginx :80, domaine déployé).
     return {
-      url: `${baseUrl}/uploads/${file.filename}`,
+      url: `/uploads/${file.filename}`,
       name: file.originalname,
       type: file.mimetype,
       size: file.size,

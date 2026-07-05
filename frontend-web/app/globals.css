@@ -53,8 +53,8 @@
   --accent:  var(--sat-accent);
   --accent2: var(--sat-accent2);
 
-  /* Logo : 0 = noir (thèmes clairs), 1 = blanc (thèmes sombres) */
-  --logo-invert: 0;
+  /* logo.png est BLANC : 1 = rendu noir (thèmes clairs), 0 = rendu blanc (thèmes sombres) */
+  --logo-invert: 1;
 }
 
 *, *::before, *::after { box-sizing: border-box; }

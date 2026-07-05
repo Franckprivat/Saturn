@@ -1,10 +1,14 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/common';
 import { CommunitiesService } from './communities.service';
+import { InvitationsService } from './invitations.service';
 import { getSessionUser } from '../auth/get-session-user';
 
 @Controller('communities')
 export class CommunitiesController {
-  constructor(private readonly communitiesService: CommunitiesService) {}
+  constructor(
+    private readonly communitiesService: CommunitiesService,
+    private readonly invitationsService: InvitationsService,
+  ) {}
 
   @Get()
   async getMine(@Req() req: any) {
@@ -19,9 +23,10 @@ export class CommunitiesController {
   }
 
   @Post('join/:token')
-  async join(@Req() req: any, @Param('token') token: string) {
+  async join(@Req() req: any, @Param('token') token: string, @Body('message') message?: string) {
     const user = await getSessionUser(req);
-    return this.communitiesService.joinByInvite(token, user.id);
+    // Pipeline unifié : bans, quotas, expiration et politique d'adhésion
+    return this.invitationsService.joinViaToken(token, user.id, message);
   }
 
   @Get(':id')

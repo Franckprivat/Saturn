@@ -33,6 +33,7 @@ export interface ChatMessage {
   replyTo?: ChatMessage | null;
   reactions?: MessageReaction[];
   readBy?: { userId: string; readAt: string }[];
+  deliveredTo?: { userId: string; deliveredAt: string }[];
   pending?: boolean;
 }
 
@@ -68,6 +69,10 @@ interface ChatState {
   addMessage: (conversationId: string, message: ChatMessage) => void;
   updateMessage: (conversationId: string, messageId: string, patch: Partial<ChatMessage>) => void;
   replaceMessage: (conversationId: string, oldId: string, newMsg: ChatMessage) => void;
+  /** Marque tous les messages de la conversation comme lus par `readerId` (reçus ✓✓). */
+  markConversationRead: (conversationId: string, readerId: string, readAt: string) => void;
+  /** Marque tous les messages comme distribués chez `userId` (✓✓ gris). */
+  markConversationDelivered: (conversationId: string, userId: string, deliveredAt: string) => void;
   incrementUnread: (conversationId: string) => void;
   clearUnread: (conversationId: string) => void;
   totalUnread: () => number;
@@ -151,6 +156,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
         messagesByConversationId: {
           ...state.messagesByConversationId,
           [conversationId]: msgs.map((m) => (m.id === oldId ? newMsg : m)),
+        },
+      };
+    }),
+
+  markConversationRead: (conversationId, readerId, readAt) =>
+    set((state) => {
+      const msgs = state.messagesByConversationId[conversationId];
+      if (!msgs) return state;
+      return {
+        messagesByConversationId: {
+          ...state.messagesByConversationId,
+          [conversationId]: msgs.map((m) => {
+            if (m.sender.id === readerId) return m;
+            if (m.readBy?.some((r) => r.userId === readerId)) return m;
+            return { ...m, readBy: [...(m.readBy ?? []), { userId: readerId, readAt }] };
+          }),
+        },
+      };
+    }),
+
+  markConversationDelivered: (conversationId, userId, deliveredAt) =>
+    set((state) => {
+      const msgs = state.messagesByConversationId[conversationId];
+      if (!msgs) return state;
+      return {
+        messagesByConversationId: {
+          ...state.messagesByConversationId,
+          [conversationId]: msgs.map((m) => {
+            if (m.sender.id === userId) return m;
+            if (m.deliveredTo?.some((d) => d.userId === userId)) return m;
+            return { ...m, deliveredTo: [...(m.deliveredTo ?? []), { userId, deliveredAt }] };
+          }),
         },
       };
     }),

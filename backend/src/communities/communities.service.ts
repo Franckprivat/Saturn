@@ -271,6 +271,17 @@ export class CommunitiesService {
     });
 
     this.chatGateway.server.to(dm.id).emit('new_message', msg);
+
+    // Emit notification to target user
+    this.chatGateway.server.to(`user:${targetUserId}`).emit('notification', {
+      type: 'community_invite',
+      title: `Invitation — ${community.name}`,
+      body: `Tu as reçu une invitation à rejoindre ${community.name}`,
+      href: `/communities/join/${community.inviteToken}`,
+      image: community.image,
+      timestamp: new Date().toISOString(),
+    });
+
     return { ok: true };
   }
 

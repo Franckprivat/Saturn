@@ -9,7 +9,7 @@ import {
 } from '@nestjs/websockets';
 import { PrismaService } from '../prisma/prisma.service';
 import { MessagesService } from '../messages/messages.service';
-import { ForbiddenException, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { auth } from '../auth/better-auth.instance';
 
@@ -31,30 +31,38 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private readonly logger = new Logger(ChatGateway.name);
   private onlineUsers = new Map<string, number>();
-  // Salons vocaux : channelId -> (socketId -> userId)
-  private voiceRooms = new Map<string, Map<string, string>>();
+  // Salons vocaux : channelId -> { communityId, peers: socketId -> userId }
+  private voiceRooms = new Map<string, { communityId: string; peers: Map<string, string> }>();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly messagesService: MessagesService,
   ) {}
 
-  private broadcastVoiceState(channelId: string) {
+  /** L'état vocal n'est diffusé qu'aux membres de la communauté (room community:<id>). */
+  private broadcastVoiceState(channelId: string, communityId: string) {
     const room = this.voiceRooms.get(channelId);
-    const users = room ? Array.from(new Set(room.values())) : [];
-    this.server.emit('voice_state', { channelId, users });
+    const users = room ? Array.from(new Set(room.peers.values())) : [];
+    this.server.to(`community:${communityId}`).emit('voice_state', { channelId, users });
   }
 
   private leaveAllVoiceRooms(client: AuthedSocket) {
     for (const [channelId, room] of this.voiceRooms.entries()) {
-      if (room.has(client.id)) {
-        const userId = room.get(client.id);
-        room.delete(client.id);
-        client.to(`voice:${channelId}`).emit('voice_peer_left', { socketId: client.id, userId });
-        if (room.size === 0) this.voiceRooms.delete(channelId);
-        this.broadcastVoiceState(channelId);
+      if (room.peers.has(client.id)) {
+        const userId = room.peers.get(client.id);
+        room.peers.delete(client.id);
+        client.to(`voice:${channelId}`).emit('voice_peer_left', { channelId, socketId: client.id, userId });
+        if (room.peers.size === 0) this.voiceRooms.delete(channelId);
+        this.broadcastVoiceState(channelId, room.communityId);
       }
     }
+  }
+
+  private async ensureCommunityMember(communityId: string, userId: string) {
+    const member = await this.prisma.communityMember.count({
+      where: { communityId, userId },
+    });
+    if (!member) throw new ForbiddenException('Not a community member');
   }
 
   async handleConnection(client: AuthedSocket) {
@@ -161,6 +169,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     if (!client.user) throw new UnauthorizedException();
 
+    const content = (data.content ?? '').trim();
+    if (!content && !data.fileUrl) throw new BadRequestException('Message vide');
+    if (content.length > 4000) throw new BadRequestException('Message trop long (4000 caractères max)');
+
     const file = data.fileUrl
       ? { fileUrl: data.fileUrl, fileName: data.fileName || 'fichier', fileType: data.fileType || 'application/octet-stream' }
       : undefined;
@@ -168,7 +180,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const message = await this.messagesService.createMessage(
       client.user.id,
       data.conversationId,
-      data.content || '',
+      content,
       file,
       data.whisperTo,
       data.replyToId,
@@ -248,6 +260,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const result = await this.messagesService.toggleReaction(data.messageId, client.user.id, data.emoji);
     this.server.to(result.conversationId).emit('reaction_updated', {
       messageId: result.messageId,
+      conversationId: result.conversationId,
       reactions: result.reactions,
     });
     return result;
@@ -267,7 +280,43 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
+  /** Statut « distribué » : le client signale que les messages sont arrivés chez lui. */
+  @SubscribeMessage('mark_delivered')
+  async handleMarkDelivered(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() data: { conversationId: string },
+  ) {
+    if (!client.user) return;
+    const { count } = await this.messagesService.markAsDelivered(data.conversationId, client.user.id);
+    // N'émettre que s'il y a réellement des nouveaux reçus (évite le bruit)
+    if (count > 0) {
+      client.to(data.conversationId).emit('messages_delivered', {
+        conversationId: data.conversationId,
+        userId: client.user.id,
+        deliveredAt: new Date().toISOString(),
+      });
+    }
+  }
+
   // ── WebRTC Signaling ──────────────────────────────────────────────────────────
+
+  /** User IDs des autres participants d'une conversation (pour le routage des appels). */
+  private async otherParticipantIds(conversationId: string, excludeUserId: string): Promise<string[]> {
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      include: { participants: { select: { userId: true } } },
+    });
+    if (!conv) return [];
+    return conv.participants.map((p) => p.userId).filter((id) => id !== excludeUserId);
+  }
+
+  /** Relaye un évènement d'appel à la salle personnelle de chaque autre participant. */
+  private async relayCall(conversationId: string, excludeUserId: string, event: string, payload: any) {
+    const targets = await this.otherParticipantIds(conversationId, excludeUserId);
+    for (const userId of targets) {
+      this.server.to(`user:${userId}`).emit(event, payload);
+    }
+  }
 
   @SubscribeMessage('call_offer')
   async handleCallOffer(
@@ -275,11 +324,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string; offer: any; callType: 'audio' | 'video' },
   ) {
     if (!client.user) return;
-    client.to(data.conversationId).emit('call_incoming', {
+
+    const caller = await this.prisma.user.findUnique({
+      where: { id: client.user.id },
+      select: { nickname: true, email: true, image: true },
+    });
+    const callerName = caller?.nickname || caller?.email?.split('@')[0] || 'Appel';
+
+    // Sonne globalement via la salle personnelle de chaque destinataire (façon WhatsApp).
+    await this.relayCall(data.conversationId, client.user.id, 'call_incoming', {
       from: client.user.id,
       offer: data.offer,
       callType: data.callType,
       conversationId: data.conversationId,
+      callerName,
+      callerImage: caller?.image || null,
     });
   }
 
@@ -289,7 +348,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string; answer: any },
   ) {
     if (!client.user) return;
-    client.to(data.conversationId).emit('call_answered', {
+    await this.relayCall(data.conversationId, client.user.id, 'call_answered', {
       from: client.user.id,
       answer: data.answer,
     });
@@ -301,9 +360,22 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string; candidate: any },
   ) {
     if (!client.user) return;
-    client.to(data.conversationId).emit('call_ice_candidate', {
+    await this.relayCall(data.conversationId, client.user.id, 'call_ice_candidate', {
       from: client.user.id,
       candidate: data.candidate,
+    });
+  }
+
+  /** Renégociation en cours d'appel (reconnexion après coupure réseau — ICE restart). */
+  @SubscribeMessage('call_renegotiate')
+  async handleCallRenegotiate(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() data: { conversationId: string; offer: any },
+  ) {
+    if (!client.user) return;
+    await this.relayCall(data.conversationId, client.user.id, 'call_renegotiate', {
+      from: client.user.id,
+      offer: data.offer,
     });
   }
 
@@ -313,7 +385,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string },
   ) {
     if (!client.user) return;
-    client.to(data.conversationId).emit('call_ended', { from: client.user.id });
+    await this.relayCall(data.conversationId, client.user.id, 'call_ended', { from: client.user.id });
   }
 
   @SubscribeMessage('call_reject')
@@ -322,7 +394,28 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string },
   ) {
     if (!client.user) return;
-    client.to(data.conversationId).emit('call_rejected', { from: client.user.id });
+    await this.relayCall(data.conversationId, client.user.id, 'call_rejected', { from: client.user.id });
+  }
+
+  // ── Communautés : room de présence (état vocal, évènements de communauté) ──
+
+  @SubscribeMessage('join_community')
+  async handleJoinCommunity(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() data: { communityId: string },
+  ) {
+    if (!client.user) throw new UnauthorizedException();
+    await this.ensureCommunityMember(data.communityId, client.user.id);
+    await client.join(`community:${data.communityId}`);
+
+    // État vocal actuel de la communauté (pour l'affichage initial de la sidebar)
+    const voiceStates: Record<string, string[]> = {};
+    for (const [channelId, room] of this.voiceRooms.entries()) {
+      if (room.communityId === data.communityId) {
+        voiceStates[channelId] = Array.from(new Set(room.peers.values()));
+      }
+    }
+    return { ok: true, voiceStates };
   }
 
   // ── Salons vocaux (mesh WebRTC) ─────────────────────────────────────────────
@@ -333,18 +426,30 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { channelId: string },
   ) {
     if (!client.user) return;
+
+    // Le salon doit exister, être vocal, et l'utilisateur membre de sa communauté
+    const channel = await this.prisma.channel.findUnique({
+      where: { id: data.channelId },
+      select: { communityId: true, type: true },
+    });
+    if (!channel || channel.type !== 'VOICE') throw new NotFoundException('Salon vocal introuvable');
+    await this.ensureCommunityMember(channel.communityId, client.user.id);
+
     const roomKey = `voice:${data.channelId}`;
     await client.join(roomKey);
     let room = this.voiceRooms.get(data.channelId);
-    if (!room) { room = new Map(); this.voiceRooms.set(data.channelId, room); }
+    if (!room) {
+      room = { communityId: channel.communityId, peers: new Map() };
+      this.voiceRooms.set(data.channelId, room);
+    }
 
     // Pairs déjà présents (à qui le nouvel arrivant va envoyer une offre)
-    const existingPeers = Array.from(room.entries()).map(([socketId, userId]) => ({ socketId, userId }));
-    room.set(client.id, client.user.id);
+    const existingPeers = Array.from(room.peers.entries()).map(([socketId, userId]) => ({ socketId, userId }));
+    room.peers.set(client.id, client.user.id);
 
     client.emit('voice_existing_peers', { channelId: data.channelId, peers: existingPeers });
     client.to(roomKey).emit('voice_peer_joined', { channelId: data.channelId, socketId: client.id, userId: client.user.id });
-    this.broadcastVoiceState(data.channelId);
+    this.broadcastVoiceState(data.channelId, channel.communityId);
     return { ok: true };
   }
 
@@ -355,12 +460,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     if (!client.user) return;
     const room = this.voiceRooms.get(data.channelId);
-    if (room?.has(client.id)) {
-      room.delete(client.id);
+    if (room?.peers.has(client.id)) {
+      room.peers.delete(client.id);
       client.leave(`voice:${data.channelId}`);
       client.to(`voice:${data.channelId}`).emit('voice_peer_left', { channelId: data.channelId, socketId: client.id, userId: client.user.id });
-      if (room.size === 0) this.voiceRooms.delete(data.channelId);
-      this.broadcastVoiceState(data.channelId);
+      if (room.peers.size === 0) this.voiceRooms.delete(data.channelId);
+      this.broadcastVoiceState(data.channelId, room.communityId);
     }
   }
 

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { PhoneIcon, PhoneOffIcon, MicIcon, MicOffIcon, VideoIcon, VideoOffIcon } from '@/components/Icons';
 import { saveCallEntry } from '@/lib/callLog';
+import { mediaUrl } from '@/lib/media';
 
 interface CallModalProps {
   socket: any;
@@ -15,198 +16,484 @@ interface CallModalProps {
   onClose: () => void;
 }
 
+const RING_TIMEOUT = 35000;
+const ICE_CONFIG: RTCConfiguration = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ],
+};
+
+type Status = 'ringing' | 'connecting' | 'active' | 'reconnecting' | 'ended';
+type Quality = 'good' | 'medium' | 'poor';
+
+/** Qualité de connexion depuis les stats WebRTC (RTT du candidat actif). */
+async function measureQuality(pc: RTCPeerConnection): Promise<Quality | null> {
+  try {
+    const stats = await pc.getStats();
+    let rtt: number | undefined;
+    stats.forEach((report) => {
+      if (report.type === 'candidate-pair' && (report as any).nominated && (report as any).currentRoundTripTime !== undefined) {
+        rtt = (report as any).currentRoundTripTime;
+      }
+    });
+    if (rtt === undefined) return null;
+    if (rtt < 0.15) return 'good';
+    if (rtt < 0.4) return 'medium';
+    return 'poor';
+  } catch {
+    return null;
+  }
+}
+
+function QualityBars({ quality }: { quality: Quality | null }) {
+  if (!quality) return null;
+  const levels = { poor: 1, medium: 2, good: 3 } as const;
+  const colors = { poor: '#EF4444', medium: '#F59E0B', good: '#10B981' } as const;
+  const active = levels[quality];
+  const label = quality === 'good' ? 'Bonne connexion' : quality === 'medium' ? 'Connexion moyenne' : 'Connexion faible';
+  return (
+    <div className="flex items-end gap-[2px]" title={label} aria-label={label}>
+      {[1, 2, 3].map((lvl) => (
+        <span key={lvl} className="rounded-sm"
+          style={{
+            width: 3, height: 4 + lvl * 3,
+            background: lvl <= active ? colors[quality] : 'rgba(255,255,255,0.25)',
+          }} />
+      ))}
+    </div>
+  );
+}
+
 export function CallModal({ socket, conversationId, callType, isIncoming, callerName, callerImage, incomingOffer, onClose }: CallModalProps) {
-  const [status, setStatus] = useState<'ringing' | 'connecting' | 'active' | 'ended'>(isIncoming ? 'ringing' : 'connecting');
+  const [status, setStatus] = useState<Status>('ringing');
   const [muted, setMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [quality, setQuality] = useState<Quality | null>(null);
+  const qualityTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const localRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const durationRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const callStartRef = useRef<number>(0);
+  const ringTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ICE candidates reçus avant que la remoteDescription soit posée → mis en tampon
+  const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  const closedRef = useRef(false);
+  const loggedRef = useRef(false);
+  // Vrai pendant un ICE restart : onnegotiationneeded doit émettre une nouvelle offre
+  const renegotiatingRef = useRef(false);
 
-  const startTimer = useCallback(() => {
-    callStartRef.current = Date.now();
-    durationRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
+  const formatDuration = (s: number) =>
+    `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+
+  const clearTimers = useCallback(() => {
+    if (durationRef.current) { clearInterval(durationRef.current); durationRef.current = null; }
+    if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
+    if (qualityTimerRef.current) { clearInterval(qualityTimerRef.current); qualityTimerRef.current = null; }
+    if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
   }, []);
 
-  const formatDuration = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  const logCall = useCallback((st: 'answered' | 'missed', secs?: number) => {
+    if (loggedRef.current) return;
+    loggedRef.current = true;
+    saveCallEntry({
+      type: callType,
+      direction: isIncoming ? 'incoming' : 'outgoing',
+      status: st,
+      duration: secs,
+      withName: callerName || 'Inconnu',
+      withNickname: callerName,
+      withImage: callerImage,
+      conversationId,
+      timestamp: new Date().toISOString(),
+    }).catch(() => {});
+  }, [callType, isIncoming, callerName, callerImage, conversationId]);
+
+  const teardown = useCallback(() => {
+    clearTimers();
+    localStreamRef.current?.getTracks().forEach((t) => t.stop());
+    localStreamRef.current = null;
+    try { pcRef.current?.close(); } catch { /* noop */ }
+    pcRef.current = null;
+  }, [clearTimers]);
+
+  // Ferme proprement (et notifie le pair une seule fois)
+  const finish = useCallback((notify: boolean) => {
+    if (closedRef.current) return;
+    closedRef.current = true;
+    if (notify) socket?.emit('call_end', { conversationId });
+    teardown();
+    setStatus('ended');
+    setTimeout(onClose, 1200);
+  }, [socket, conversationId, onClose, teardown]);
+
+  const flushCandidates = useCallback(async () => {
+    const pc = pcRef.current;
+    if (!pc || !pc.remoteDescription) return;
+    const pending = pendingCandidatesRef.current;
+    pendingCandidatesRef.current = [];
+    for (const c of pending) {
+      try { await pc.addIceCandidate(c); } catch { /* ignore */ }
+    }
+  }, []);
+
+  const attachRemote = (stream: MediaStream) => {
+    if (remoteRef.current) {
+      remoteRef.current.srcObject = stream;
+      remoteRef.current.play?.().catch(() => {});
+    }
+  };
+
+  const buildPeer = useCallback((stream: MediaStream) => {
+    const pc = new RTCPeerConnection(ICE_CONFIG);
+    pcRef.current = pc;
+    stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate) socket.emit('call_ice_candidate', { conversationId, candidate: e.candidate.toJSON() });
+    };
+    pc.ontrack = (e) => { if (e.streams[0]) attachRemote(e.streams[0]); };
+
+    // Renégociation après ICE restart : seul l'appelant initie (évite le glare)
+    pc.onnegotiationneeded = async () => {
+      if (!renegotiatingRef.current) return;
+      renegotiatingRef.current = false;
+      try {
+        const offer = await pc.createOffer({ iceRestart: true });
+        await pc.setLocalDescription(offer);
+        socket.emit('call_renegotiate', { conversationId, offer });
+      } catch { /* la connexion finira par échouer → finish */ }
+    };
+
+    pc.onconnectionstatechange = () => {
+      const st = pc.connectionState;
+      if (st === 'connected') {
+        setStatus('active');
+        logCall('answered');
+        if (!durationRef.current) durationRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
+        if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; }
+        if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
+        // Mesure de qualité toutes les 3 s
+        if (!qualityTimerRef.current) {
+          qualityTimerRef.current = setInterval(async () => {
+            const q = await measureQuality(pc);
+            if (q) setQuality(q);
+          }, 3000);
+        }
+      } else if (st === 'disconnected' || st === 'failed') {
+        // Coupure réseau : on tente de récupérer avant d'abandonner
+        setStatus((s) => (s === 'active' ? 'reconnecting' : s));
+        setQuality('poor');
+        if (!isIncoming) {
+          renegotiatingRef.current = true;
+          try { pc.restartIce(); } catch { /* ignoré */ }
+        }
+        if (!reconnectTimerRef.current) {
+          reconnectTimerRef.current = setTimeout(() => {
+            if (pc.connectionState !== 'connected') finish(true);
+          }, 15000);
+        }
+      } else if (st === 'closed') {
+        finish(false);
+      }
+    };
+    return pc;
+  }, [socket, conversationId, logCall, finish, isIncoming]);
 
   const getLocalStream = useCallback(async () => {
     const constraints = callType === 'video' ? { audio: true, video: true } : { audio: true };
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     localStreamRef.current = stream;
-    if (localRef.current) localRef.current.srcObject = stream;
+    if (callType === 'video' && localRef.current) localRef.current.srcObject = stream;
     return stream;
   }, [callType]);
 
-  const createPeerConnection = useCallback(() => {
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
-    });
-    pc.onicecandidate = (e) => {
-      if (e.candidate) socket.emit('call_ice_candidate', { conversationId, candidate: e.candidate });
-    };
-    pc.ontrack = (e) => {
-      if (remoteRef.current && e.streams[0]) remoteRef.current.srcObject = e.streams[0];
-    };
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'connected') { setStatus('active'); startTimer(); }
-      if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) handleEnd();
-    };
-    pcRef.current = pc;
-    return pc;
-  }, [socket, conversationId, startTimer]);
-
+  // ── Accepter (destinataire) ──
   const handleAccept = useCallback(async () => {
+    if (!incomingOffer) return;
     setStatus('connecting');
-    saveCallEntry({
-      type: callType,
-      direction: 'incoming',
-      status: 'answered',
-      withName: callerName || 'Inconnu',
-      withNickname: callerName,
-      withImage: callerImage,
-      timestamp: new Date().toISOString(),
-    });
-    const stream = await getLocalStream();
-    const pc = createPeerConnection();
-    stream.getTracks().forEach((t) => pc.addTrack(t, stream));
-    if (incomingOffer) {
+    try {
+      const stream = await getLocalStream();
+      const pc = buildPeer(stream);
       await pc.setRemoteDescription(incomingOffer);
+      await flushCandidates();
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       socket.emit('call_answer', { conversationId, answer });
+    } catch {
+      finish(true);
     }
-  }, [getLocalStream, createPeerConnection, incomingOffer, socket, conversationId, callType, callerName, callerImage]);
+  }, [incomingOffer, getLocalStream, buildPeer, flushCandidates, socket, conversationId, finish]);
 
-  const handleEnd = useCallback(() => {
-    socket.emit('call_end', { conversationId });
-    localStreamRef.current?.getTracks().forEach((t) => t.stop());
-    pcRef.current?.close();
-    if (durationRef.current) clearInterval(durationRef.current);
-    setStatus('ended');
-    setTimeout(onClose, 1200);
-  }, [socket, conversationId, onClose]);
-
+  // ── Refuser (destinataire) ──
   const handleReject = useCallback(() => {
-    socket.emit('call_reject', { conversationId });
-    saveCallEntry({
-      type: callType,
-      direction: 'incoming',
-      status: 'missed',
-      withName: callerName || 'Inconnu',
-      withNickname: callerName,
-      withImage: callerImage,
-      timestamp: new Date().toISOString(),
-    });
+    if (closedRef.current) return;
+    closedRef.current = true;
+    socket?.emit('call_reject', { conversationId });
+    logCall('missed');
+    teardown();
     onClose();
-  }, [socket, conversationId, onClose, callType, callerName, callerImage]);
+  }, [socket, conversationId, logCall, teardown, onClose]);
 
+  const handleEnd = useCallback(() => finish(true), [finish]);
+
+  // ── Démarrage appel sortant ──
   useEffect(() => {
     if (isIncoming) return;
+    let cancelled = false;
     (async () => {
-      const stream = await getLocalStream().catch(onClose);
-      if (!stream) return;
-      const pc = createPeerConnection();
-      (stream as MediaStream).getTracks().forEach((t) => pc.addTrack(t, stream as MediaStream));
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      socket.emit('call_offer', { conversationId, offer, callType });
+      try {
+        const stream = await getLocalStream();
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        const pc = buildPeer(stream);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit('call_offer', { conversationId, offer, callType });
+      } catch {
+        finish(false);
+      }
     })();
-    return () => {
-      localStreamRef.current?.getTracks().forEach((t) => t.stop());
-      pcRef.current?.close();
-      if (durationRef.current) clearInterval(durationRef.current);
-    };
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Timeout de sonnerie (entrant non décroché OU sortant sans réponse) ──
+  useEffect(() => {
+    if (status !== 'ringing' && status !== 'connecting') return;
+    ringTimeoutRef.current = setTimeout(() => {
+      if (closedRef.current) return;
+      logCall('missed');
+      if (!isIncoming) socket?.emit('call_end', { conversationId });
+      teardown();
+      setStatus('ended');
+      setTimeout(onClose, 1200);
+      closedRef.current = true;
+    }, RING_TIMEOUT);
+    return () => { if (ringTimeoutRef.current) { clearTimeout(ringTimeoutRef.current); ringTimeoutRef.current = null; } };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
+  // ── Évènements socket ──
   useEffect(() => {
     if (!socket) return;
-    const onAnswer = async ({ answer }: any) => {
-      await pcRef.current?.setRemoteDescription(answer);
+    const onAnswered = async ({ answer }: any) => {
+      try {
+        await pcRef.current?.setRemoteDescription(answer);
+        await flushCandidates();
+        setStatus((s) => (s === 'ringing' ? 'connecting' : s));
+      } catch { /* ignore */ }
     };
     const onIce = async ({ candidate }: any) => {
-      await pcRef.current?.addIceCandidate(candidate).catch(() => {});
+      if (!candidate) return;
+      const pc = pcRef.current;
+      if (pc && pc.remoteDescription) {
+        try { await pc.addIceCandidate(candidate); } catch { /* ignore */ }
+      } else {
+        pendingCandidatesRef.current.push(candidate);
+      }
     };
-    const onEnd = () => { setStatus('ended'); localStreamRef.current?.getTracks().forEach((t) => t.stop()); setTimeout(onClose, 1200); };
-    socket.on('call_answered', onAnswer);
+    // Renégociation reçue (l'appelant a fait un ICE restart) → on répond
+    const onRenegotiate = async ({ offer }: any) => {
+      const pc = pcRef.current;
+      if (!pc) return;
+      try {
+        await pc.setRemoteDescription(offer);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('call_answer', { conversationId, answer });
+      } catch { /* ignore */ }
+    };
+
+    const onEnded = () => {
+      if (closedRef.current) return;
+      closedRef.current = true;
+      teardown();
+      setStatus('ended');
+      setTimeout(onClose, 1200);
+    };
+    const onRejected = () => {
+      if (closedRef.current) return;
+      closedRef.current = true;
+      logCall('missed');
+      teardown();
+      setStatus('ended');
+      setTimeout(onClose, 1200);
+    };
+
+    socket.on('call_answered', onAnswered);
     socket.on('call_ice_candidate', onIce);
-    socket.on('call_ended', onEnd);
-    socket.on('call_rejected', () => { setStatus('ended'); setTimeout(onClose, 1200); });
-    return () => { socket.off('call_answered', onAnswer); socket.off('call_ice_candidate', onIce); socket.off('call_ended', onEnd); socket.off('call_rejected'); };
-  }, [socket, onClose]);
+    socket.on('call_renegotiate', onRenegotiate);
+    socket.on('call_ended', onEnded);
+    socket.on('call_rejected', onRejected);
+    return () => {
+      socket.off('call_answered', onAnswered);
+      socket.off('call_ice_candidate', onIce);
+      socket.off('call_renegotiate', onRenegotiate);
+      socket.off('call_ended', onEnded);
+      socket.off('call_rejected', onRejected);
+    };
+  }, [socket, flushCandidates, teardown, onClose, logCall, conversationId]);
+
+  useEffect(() => () => teardown(), [teardown]);
 
   const toggleMute = () => {
-    localStreamRef.current?.getAudioTracks().forEach((t) => { t.enabled = !t.enabled; });
-    setMuted((m) => !m);
+    const next = !muted;
+    localStreamRef.current?.getAudioTracks().forEach((t) => { t.enabled = !next; });
+    setMuted(next);
+  };
+  const toggleCamera = () => {
+    const next = !cameraOff;
+    localStreamRef.current?.getVideoTracks().forEach((t) => { t.enabled = !next; });
+    setCameraOff(next);
   };
 
-  const toggleCamera = () => {
-    localStreamRef.current?.getVideoTracks().forEach((t) => { t.enabled = !t.enabled; });
-    setCameraOff((c) => !c);
-  };
+  const initial = (callerName || '?').charAt(0).toUpperCase();
+  const statusLabel =
+    status === 'ringing' ? (isIncoming ? 'Appel entrant…' : 'Sonnerie…')
+    : status === 'connecting' ? 'Connexion…'
+    : status === 'reconnecting' ? 'Reconnexion…'
+    : status === 'active' ? formatDuration(duration)
+    : 'Appel terminé';
 
   return (
-    <div className="fixed inset-0 z-[9998] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)' }}>
-      <div className="relative rounded-2xl overflow-hidden shadow-2xl" style={{ width: callType === 'video' ? 560 : 320, background: '#1a1a2e' }}>
+    <div className="fixed inset-0 z-[9998] flex items-center justify-center"
+      style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(10px)' }}>
 
-        {callType === 'video' && (
-          <div className="relative" style={{ height: 360, background: '#0f0f1a' }}>
+      {callType === 'video' ? (
+        <div className="relative rounded-2xl overflow-hidden shadow-2xl" style={{ width: 560, background: '#0f0f1a' }}>
+          <div className="relative" style={{ height: 360 }}>
             <video ref={remoteRef} autoPlay playsInline className="w-full h-full object-cover" />
-            <video ref={localRef} autoPlay playsInline muted className="absolute bottom-3 right-3 w-24 h-18 rounded-xl object-cover border-2 border-white border-opacity-20" style={{ height: 72 }} />
+            {status !== 'active' && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3" style={{ background: 'rgba(15,15,26,0.85)' }}>
+                <Avatar image={callerImage} initial={initial} ringing={status === 'ringing'} />
+                <p className="text-white font-bold text-lg">{callerName}</p>
+                <p className="text-sm" style={{ color: 'rgba(255,255,255,0.6)' }}>{statusLabel}</p>
+              </div>
+            )}
+            <video ref={localRef} autoPlay playsInline muted
+              className="absolute bottom-3 right-3 w-28 rounded-xl object-cover shadow-lg"
+              style={{ height: 80, border: '2px solid rgba(255,255,255,0.2)' }} />
+            {(status === 'active' || status === 'reconnecting') && (
+              <>
+                <div className="absolute top-3 left-3 px-3 py-1 rounded-full text-white text-xs font-semibold flex items-center gap-2" style={{ background: 'rgba(0,0,0,0.45)' }}>
+                  {callerName}
+                  <QualityBars quality={quality} />
+                </div>
+                <div className="absolute top-3 right-3 px-3 py-1 rounded-full text-white text-xs font-semibold tabular-nums" style={{ background: 'rgba(0,0,0,0.45)' }}>
+                  {status === 'reconnecting' ? 'Reconnexion…' : formatDuration(duration)}
+                </div>
+              </>
+            )}
           </div>
-        )}
-
-        {callType === 'audio' && (
-          <div className="flex flex-col items-center py-10">
-            <div className="w-20 h-20 rounded-full mb-4 flex items-center justify-center text-white" style={{ background: 'rgba(37,99,235,0.25)' }}>
-              <PhoneIcon size={34} />
+          <CallControls status={status} isIncoming={isIncoming} callType={callType}
+            muted={muted} cameraOff={cameraOff}
+            onAccept={handleAccept} onReject={handleReject} onEnd={handleEnd}
+            onToggleMute={toggleMute} onToggleCamera={toggleCamera} />
+        </div>
+      ) : (
+        <div className="rounded-2xl overflow-hidden shadow-2xl" style={{ width: 320, background: 'linear-gradient(145deg,#1a1a2e,#16213e)' }}>
+          <audio ref={remoteRef as any} autoPlay />
+          <div className="flex flex-col items-center pt-10 pb-6 px-6 gap-4 relative">
+            <Avatar image={callerImage} initial={initial} ringing={status === 'ringing'} />
+            <div className="text-center z-10">
+              <p className="text-white font-bold text-xl mb-1">{callerName || 'Appel'}</p>
+              <p className="text-sm tabular-nums flex items-center justify-center gap-2" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                {statusLabel}
+                {(status === 'active' || status === 'reconnecting') && <QualityBars quality={quality} />}
+              </p>
             </div>
-            <audio ref={remoteRef as any} autoPlay />
-            <audio ref={localRef as any} autoPlay muted />
           </div>
-        )}
+          <CallControls status={status} isIncoming={isIncoming} callType={callType}
+            muted={muted} cameraOff={cameraOff}
+            onAccept={handleAccept} onReject={handleReject} onEnd={handleEnd}
+            onToggleMute={toggleMute} onToggleCamera={toggleCamera} />
+        </div>
+      )}
+    </div>
+  );
+}
 
-        <div className="p-5 flex flex-col items-center gap-3" style={{ background: 'rgba(0,0,0,0.4)' }}>
-          <div className="text-center">
-            {callerName && <p className="text-white font-bold text-base">{callerName}</p>}
-            <p className="text-sm" style={{ color: 'rgba(255,255,255,0.6)' }}>
-              {status === 'ringing' && (isIncoming ? 'Appel entrant...' : 'Appel en cours...')}
-              {status === 'connecting' && 'Connexion...'}
-              {status === 'active' && formatDuration(duration)}
-              {status === 'ended' && 'Appel terminé'}
-            </p>
+function Avatar({ image, initial, ringing }: { image?: string; initial: string; ringing: boolean }) {
+  return (
+    <div className="relative flex items-center justify-center">
+      {ringing && (
+        <>
+          <span className="absolute w-32 h-32 rounded-full animate-ping" style={{ background: 'rgba(99,102,241,0.15)', animationDuration: '1.5s' }} />
+          <span className="absolute w-28 h-28 rounded-full animate-ping" style={{ background: 'rgba(99,102,241,0.2)', animationDuration: '1.5s', animationDelay: '0.4s' }} />
+        </>
+      )}
+      <div className="relative w-24 h-24 rounded-full overflow-hidden shadow-xl z-10" style={{ border: '3px solid rgba(255,255,255,0.15)' }}>
+        {image
+          ? <img src={mediaUrl(image)} alt="" className="w-full h-full object-cover" />
+          : <div className="w-full h-full flex items-center justify-center text-3xl font-black text-white" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>{initial}</div>}
+      </div>
+    </div>
+  );
+}
+
+function CallControls({
+  status, isIncoming, callType, muted, cameraOff,
+  onAccept, onReject, onEnd, onToggleMute, onToggleCamera,
+}: {
+  status: Status; isIncoming: boolean; callType: 'audio' | 'video';
+  muted: boolean; cameraOff: boolean;
+  onAccept: () => void; onReject: () => void; onEnd: () => void;
+  onToggleMute: () => void; onToggleCamera: () => void;
+}) {
+  return (
+    <div className="px-5 py-5 flex flex-col items-center gap-3" style={{ background: 'rgba(0,0,0,0.35)' }}>
+      {status === 'ringing' && isIncoming ? (
+        <div className="flex gap-8">
+          <div className="flex flex-col items-center gap-2">
+            <button onClick={onReject} className="w-16 h-16 rounded-full flex items-center justify-center text-white transition hover:scale-105 active:scale-95"
+              style={{ background: '#EF4444', boxShadow: '0 6px 20px rgba(239,68,68,0.4)' }}>
+              <PhoneOffIcon size={26} />
+            </button>
+            <span className="text-[11px] text-white/50 font-medium">Refuser</span>
           </div>
-
-          {status === 'ringing' && isIncoming ? (
-            <div className="flex gap-4">
-              <button onClick={handleReject} className="w-14 h-14 rounded-full flex items-center justify-center text-white transition hover:opacity-90" style={{ background: '#EF4444' }} title="Refuser">
-                <PhoneOffIcon size={24} />
+          <div className="flex flex-col items-center gap-2">
+            <button onClick={onAccept} className="w-16 h-16 rounded-full flex items-center justify-center text-white transition hover:scale-105 active:scale-95"
+              style={{ background: '#10B981', boxShadow: '0 6px 20px rgba(16,185,129,0.4)' }}>
+              <PhoneIcon size={26} />
+            </button>
+            <span className="text-[11px] text-white/50 font-medium">Répondre</span>
+          </div>
+        </div>
+      ) : status === 'ended' ? (
+        <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.1)' }}>
+          <PhoneOffIcon size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />
+        </div>
+      ) : (
+        <div className="flex gap-3 items-center">
+          <div className="flex flex-col items-center gap-1.5">
+            <button onClick={onToggleMute} className="w-12 h-12 rounded-full flex items-center justify-center text-white transition hover:scale-105 active:scale-95"
+              style={{ background: muted ? '#EF4444' : 'rgba(255,255,255,0.15)' }}>
+              {muted ? <MicOffIcon size={20} /> : <MicIcon size={20} />}
+            </button>
+            <span className="text-[10px] text-white/40">{muted ? 'Muet' : 'Micro'}</span>
+          </div>
+          {callType === 'video' && (
+            <div className="flex flex-col items-center gap-1.5">
+              <button onClick={onToggleCamera} className="w-12 h-12 rounded-full flex items-center justify-center text-white transition hover:scale-105 active:scale-95"
+                style={{ background: cameraOff ? '#EF4444' : 'rgba(255,255,255,0.15)' }}>
+                {cameraOff ? <VideoOffIcon size={20} /> : <VideoIcon size={20} />}
               </button>
-              <button onClick={handleAccept} className="w-14 h-14 rounded-full flex items-center justify-center text-white transition hover:opacity-90" style={{ background: '#10B981' }} title="Répondre">
-                <PhoneIcon size={24} />
-              </button>
-            </div>
-          ) : (
-            <div className="flex gap-3">
-              <button onClick={toggleMute} className="w-12 h-12 rounded-full flex items-center justify-center text-white transition" style={{ background: muted ? '#EF4444' : 'rgba(255,255,255,0.15)' }} title={muted ? 'Activer le micro' : 'Couper le micro'}>
-                {muted ? <MicOffIcon size={20} /> : <MicIcon size={20} />}
-              </button>
-              {callType === 'video' && (
-                <button onClick={toggleCamera} className="w-12 h-12 rounded-full flex items-center justify-center text-white transition" style={{ background: cameraOff ? '#EF4444' : 'rgba(255,255,255,0.15)' }} title={cameraOff ? 'Activer la caméra' : 'Couper la caméra'}>
-                  {cameraOff ? <VideoOffIcon size={20} /> : <VideoIcon size={20} />}
-                </button>
-              )}
-              <button onClick={handleEnd} className="w-12 h-12 rounded-full flex items-center justify-center text-white transition hover:opacity-90" style={{ background: '#EF4444' }} title="Raccrocher">
-                <PhoneOffIcon size={22} />
-              </button>
+              <span className="text-[10px] text-white/40">{cameraOff ? 'Off' : 'Caméra'}</span>
             </div>
           )}
+          <div className="flex flex-col items-center gap-1.5">
+            <button onClick={onEnd} className="w-14 h-14 rounded-full flex items-center justify-center text-white transition hover:scale-105 active:scale-95"
+              style={{ background: '#EF4444', boxShadow: '0 6px 20px rgba(239,68,68,0.4)' }}>
+              <PhoneOffIcon size={24} />
+            </button>
+            <span className="text-[10px] text-white/40">Raccrocher</span>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

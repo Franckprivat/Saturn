@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
+import { mediaUrl } from '@/lib/media';
 import { Avatar } from '@/components/Avatar';
 import { Spinner } from '@/components/Spinner';
 import { toast } from '@/components/Toast';
@@ -42,7 +43,7 @@ export function CreateGroupModal({ friends, onClose, onCreated }: CreateGroupMod
     try {
       const form = new FormData();
       form.append('file', file);
-      const res = await api.post('/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const res = await api.post('/upload', form);
       setImage(res.data.url);
     } catch { toast('Erreur upload image', 'error'); }
     e.target.value = '';
@@ -72,7 +73,7 @@ export function CreateGroupModal({ friends, onClose, onCreated }: CreateGroupMod
         {/* Header */}
         <div className="px-5 py-4 flex items-center gap-3" style={{ borderBottom: '1px solid var(--sat-border)' }}>
           <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>👥</div>
+            style={{ background: 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg></div>
           <div className="flex-1 min-w-0">
             <h2 className="text-base font-bold" style={{ color: 'var(--sat-text)' }}>Nouveau groupe</h2>
             <p className="text-xs" style={{ color: 'var(--sat-muted)' }}>
@@ -93,7 +94,7 @@ export function CreateGroupModal({ friends, onClose, onCreated }: CreateGroupMod
                 className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0 transition relative group"
                 style={{ background: image ? 'transparent' : 'var(--sat-hover)', border: '2px dashed var(--sat-border-2)' }}>
                 {image
-                  ? <img src={image} className="w-full h-full object-cover" alt="" />
+                  ? <img src={mediaUrl(image)} className="w-full h-full object-cover" alt="" />
                   : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--sat-muted)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                       <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" /><circle cx="12" cy="13" r="4" />
                     </svg>}

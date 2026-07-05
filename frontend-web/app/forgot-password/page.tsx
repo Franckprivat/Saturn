@@ -54,7 +54,7 @@ export default function ForgotPasswordPage() {
 
         {sent ? (
           <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center space-y-3">
-            <div className="text-4xl">📬</div>
+            <svg className="mx-auto" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" /></svg>
             <p className="text-[#10B981] font-semibold text-sm">Email envoyé !</p>
             <p className="text-[#64748B] text-xs">
               Vérifie ta boîte mail (et tes spams). Le lien expire dans 1 heure.

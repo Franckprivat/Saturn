@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Req } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, Patch, Req } from '@nestjs/common';
 import { getSessionUser } from '../auth/get-session-user';
 import { UsersService } from './users.service';
 
@@ -12,6 +12,14 @@ export class UsersController {
     return this.usersService.findById(user.id);
   }
 
+  @Get(':id')
+  async getPublicProfile(@Req() req: any, @Param('id') id: string) {
+    await getSessionUser(req); // réservé aux utilisateurs connectés
+    const profile = await this.usersService.findPublicById(id);
+    if (!profile) throw new NotFoundException('Utilisateur introuvable');
+    return profile;
+  }
+
   @Patch('me')
   async updateProfile(
     @Req() req: any,
@@ -21,6 +29,7 @@ export class UsersController {
       socialLinks?: Record<string, string>;
       avatarColor?: string;
       image?: string;
+      chatWallpaper?: string | null;
     },
   ) {
     const user = await getSessionUser(req);

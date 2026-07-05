@@ -25,6 +25,10 @@ services:
       - .env
     environment:
       PORT: "3000"
+    volumes:
+      # Persistance des fichiers uploadés : sans ce volume, chaque rebuild du
+      # conteneur effaçait les images (URLs orphelines en base → images cassées)
+      - uploads-data:/usr/src/app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -81,3 +85,4 @@ services:
 
 volumes:
   db-data:
+  uploads-data:

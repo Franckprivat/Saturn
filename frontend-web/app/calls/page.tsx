@@ -1,9 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { PhoneIcon, VideoIcon } from '@/components/Icons';
+import { PhoneIcon, VideoIcon, TrashIcon } from '@/components/Icons';
 import { Avatar } from '@/components/Avatar';
 import { type CallEntry, loadCallLog } from '@/lib/callLog';
+import { api } from '@/lib/api';
+import { useCallStore } from '@/store/callStore';
+import { useBadgeStore } from '@/store/badgeStore';
 
 export type { CallEntry };
 
@@ -29,14 +32,35 @@ function formatRelative(iso: string) {
 export default function CallsPage() {
   const [calls, setCalls] = useState<CallEntry[]>([]);
   const [filter, setFilter] = useState<'all' | 'missed'>('all');
+  const startCall = useCallStore((s) => s.startCall);
 
-  useEffect(() => { setCalls(loadCallLog()); }, []);
+  useEffect(() => {
+    loadCallLog().then(setCalls);
+    // Ouvrir le journal = tous les appels manqués sont vus (badge remis à zéro)
+    useBadgeStore.getState().markCallsSeen();
+  }, []);
 
   const displayed = filter === 'missed' ? calls.filter((c) => c.status === 'missed') : calls;
 
-  const clearLog = () => {
-    localStorage.removeItem('saturn_call_log');
+  const clearLog = async () => {
+    try { await api.delete('/calls'); } catch { localStorage.removeItem('saturn_call_log'); }
     setCalls([]);
+  };
+
+  const deleteEntry = async (id: string) => {
+    try { await api.delete(`/calls/${id}`); } catch { /* entrée locale */ }
+    setCalls((prev) => prev.filter((c) => c.id !== id));
+  };
+
+  // Rappeler : relance un appel dans la même conversation (l'appel sonne partout via CallManager)
+  const callBack = (call: CallEntry, callType: 'audio' | 'video') => {
+    if (!call.conversationId) return;
+    startCall({
+      conversationId: call.conversationId,
+      callType,
+      peerName: call.withNickname || call.withName,
+      peerImage: call.withImage,
+    });
   };
 
   return (
@@ -126,6 +150,35 @@ export default function CallsPage() {
                     </div>
                   </div>
                   <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--sat-faint)' }}>{formatRelative(call.timestamp)}</span>
+
+                  {/* Actions : rappeler (audio/vidéo) + supprimer l'entrée */}
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {call.conversationId && (
+                      <>
+                        <button onClick={() => callBack(call, 'audio')} title="Rappeler"
+                          className="w-8 h-8 rounded-xl flex items-center justify-center transition"
+                          style={{ background: 'rgba(16,185,129,0.1)', color: '#10B981' }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(16,185,129,0.2)')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(16,185,129,0.1)')}>
+                          <PhoneIcon size={14} />
+                        </button>
+                        <button onClick={() => callBack(call, 'video')} title="Rappeler en vidéo"
+                          className="w-8 h-8 rounded-xl flex items-center justify-center transition"
+                          style={{ background: 'var(--sat-hover)', color: 'var(--sat-muted)' }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--sat-text)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--sat-muted)'; }}>
+                          <VideoIcon size={14} />
+                        </button>
+                      </>
+                    )}
+                    <button onClick={() => deleteEntry(call.id)} title="Supprimer du journal"
+                      className="w-8 h-8 rounded-xl flex items-center justify-center transition"
+                      style={{ background: 'transparent', color: 'var(--sat-faint)' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = '#EF4444'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--sat-faint)'; }}>
+                      <TrashIcon size={14} />
+                    </button>
+                  </div>
                 </div>
               );
             })}

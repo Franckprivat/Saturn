@@ -3,11 +3,15 @@ import { persist } from 'zustand/middleware';
 
 export type AppNotification = {
   id: string;
-  type: 'message' | 'community_invite';
+  /** message, community_invite, friend_request, friend_accepted, invite_accepted,
+   *  invite_declined, join_request, request_approved, request_rejected, … */
+  type: string;
   title: string;
   body: string;
   href: string;
   conversationId?: string;
+  /** Invitation directe de communauté : permet Accepter/Refuser depuis la cloche. */
+  inviteId?: string;
   image?: string;
   timestamp: string;
   read: boolean;

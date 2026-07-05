@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { FriendsService } from '../friends/friends.service';
@@ -39,10 +39,16 @@ export class ConversationsService {
           },
         },
       },
-      orderBy: { conversation: { createdAt: 'desc' } },
     });
 
-    return participants.map((p) => p.conversation);
+    // Tri façon WhatsApp : la conversation la plus récemment active en premier
+    return participants
+      .map((p) => p.conversation)
+      .sort((a, b) => {
+        const lastA = a.messages[0]?.createdAt ?? a.createdAt;
+        const lastB = b.messages[0]?.createdAt ?? b.createdAt;
+        return new Date(lastB).getTime() - new Date(lastA).getTime();
+      });
   }
 
   async getConversationById(conversationId: string, userId: string) {
@@ -64,20 +70,35 @@ export class ConversationsService {
     return conv;
   }
 
-  async createConversation(creatorId: string, participantIds: string[]) {
-    const uniqueUserIds = Array.from(new Set([creatorId, ...participantIds]));
-    return this.prisma.conversation.create({
-      data: { participants: { create: uniqueUserIds.map((userId) => ({ userId })) } },
-      include: { participants: PARTICIPANTS_INCLUDE },
+  /** Ne garde que les utilisateurs réellement amis avec `userId` (anti-spam). */
+  private async filterToFriends(userId: string, candidateIds: string[]): Promise<string[]> {
+    const unique = Array.from(new Set(candidateIds)).filter((id) => id && id !== userId);
+    if (!unique.length) return [];
+    const friendships = await this.prisma.friendship.findMany({
+      where: {
+        status: 'ACCEPTED',
+        OR: [
+          { requesterId: userId, addresseeId: { in: unique } },
+          { addresseeId: userId, requesterId: { in: unique } },
+        ],
+      },
+      select: { requesterId: true, addresseeId: true },
     });
+    const friendIds = new Set(
+      friendships.map((f) => (f.requesterId === userId ? f.addresseeId : f.requesterId)),
+    );
+    return unique.filter((id) => friendIds.has(id));
   }
 
   async createGroupConversation(creatorId: string, name: string, memberIds: string[]) {
-    const uniqueUserIds = Array.from(new Set([creatorId, ...memberIds]));
+    if (!name?.trim()) throw new BadRequestException('Nom du groupe requis');
+    const friendMembers = await this.filterToFriends(creatorId, memberIds);
+    if (!friendMembers.length) throw new BadRequestException('Ajoute au moins un ami au groupe');
+    const uniqueUserIds = [creatorId, ...friendMembers];
     return this.prisma.conversation.create({
       data: {
         type: 'GROUP',
-        name,
+        name: name.trim(),
         creatorId,
         participants: {
           create: uniqueUserIds.map((userId) => ({
@@ -105,16 +126,18 @@ export class ConversationsService {
 
   async addMembers(conversationId: string, userId: string, memberIds: string[]) {
     await this.ensureAdmin(conversationId, userId);
+    const friendMembers = await this.filterToFriends(userId, memberIds);
     const existing = await this.prisma.conversationParticipant.findMany({
       where: { conversationId },
       select: { userId: true },
     });
     const existingIds = new Set(existing.map((p) => p.userId));
-    const toAdd = memberIds.filter((id) => !existingIds.has(id));
-    if (toAdd.length === 0) return;
-    await this.prisma.conversationParticipant.createMany({
-      data: toAdd.map((memberId) => ({ userId: memberId, conversationId, role: 'MEMBER' })),
-    });
+    const toAdd = friendMembers.filter((id) => !existingIds.has(id));
+    if (toAdd.length > 0) {
+      await this.prisma.conversationParticipant.createMany({
+        data: toAdd.map((memberId) => ({ userId: memberId, conversationId, role: 'MEMBER' })),
+      });
+    }
     return this.prisma.conversation.findUnique({
       where: { id: conversationId },
       include: { participants: PARTICIPANTS_INCLUDE },
@@ -184,6 +207,11 @@ export class ConversationsService {
   }
 
   async leaveGroup(conversationId: string, userId: string) {
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { type: true },
+    });
+    if (conv?.type !== 'GROUP') throw new ForbiddenException('Seul un groupe peut être quitté');
     const participant = await this.prisma.conversationParticipant.findFirst({
       where: { conversationId, userId },
     });
@@ -207,6 +235,11 @@ export class ConversationsService {
   }
 
   async deleteGroup(conversationId: string, userId: string) {
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { type: true },
+    });
+    if (conv?.type !== 'GROUP') throw new ForbiddenException('Seul un groupe peut être supprimé');
     await this.ensureAdmin(conversationId, userId);
     await this.prisma.message.deleteMany({ where: { conversationId } });
     await this.prisma.conversationParticipant.deleteMany({ where: { conversationId } });

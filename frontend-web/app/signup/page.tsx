@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { api } from '@/lib/api';
+import { mediaUrl } from '@/lib/media';
 import { AuthLayout, AuthInput, AuthButton, AuthError } from '@/components/AuthLayout';
 
 // Format Tailwind attendu par <Avatar /> (bg-gradient-to-br ${color})
@@ -34,13 +35,17 @@ export default function SignupPage() {
 
   const initial = (nickname || firstName || '?').charAt(0).toUpperCase();
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 3 * 1024 * 1024) { setError('Image trop lourde (max 3 Mo).'); return; }
-    const reader = new FileReader();
-    reader.onload = () => { setImage(reader.result as string); setShowColors(false); };
-    reader.readAsDataURL(file);
+    if (file.size > 5 * 1024 * 1024) { setError('Image trop lourde (max 5 Mo).'); return; }
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await api.post('/upload', fd);
+      setImage(res.data.url);
+      setShowColors(false);
+    } catch { setError("Erreur lors de l'upload de la photo."); }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -72,7 +77,7 @@ export default function SignupPage() {
               type="button" onClick={() => fileRef.current?.click()}
               className={`w-14 h-14 rounded-2xl overflow-hidden flex items-center justify-center text-xl font-black text-white transition-transform hover:scale-105 ${image ? '' : `bg-gradient-to-br ${color}`}`}
             >
-              {image ? <img src={image} alt="avatar" className="w-full h-full object-cover" /> : <span className="select-none">{initial}</span>}
+              {image ? <img src={mediaUrl(image)} alt="avatar" className="w-full h-full object-cover" /> : <span className="select-none">{initial}</span>}
             </button>
             <button
               type="button" onClick={() => fileRef.current?.click()}

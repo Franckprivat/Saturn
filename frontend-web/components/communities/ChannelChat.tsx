@@ -7,6 +7,10 @@ import { useChatStore } from '@/store/chatStore';
 import { Avatar } from '@/components/Avatar';
 import { EmojiPicker } from '@/components/EmojiPicker';
 import { Spinner } from '@/components/Spinner';
+import { FilePreview } from '@/components/media/FilePreview';
+import { ImageSendModal, type UploadedFileInfo } from '@/components/media/ImageSendModal';
+import { DeleteMessageDialog } from '@/components/DeleteMessageDialog';
+import { getHiddenMessageIds, hideMessageForMe } from '@/lib/hiddenMessages';
 import { toast } from '@/components/Toast';
 import { SmileyIcon, ReplyIcon, EditIcon, TrashIcon, PaperclipIcon, SendIcon } from '@/components/Icons';
 
@@ -23,13 +27,6 @@ function colorFor(id: string) {
   return MEMBER_COLORS[Math.abs(h) % MEMBER_COLORS.length];
 }
 
-function FilePreview({ url, name, type }: { url: string; name: string; type: string }) {
-  if (type.startsWith('image/')) return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={name} className="max-w-[260px] max-h-[260px] rounded-xl object-cover" style={{ border: '1px solid var(--sat-border-2)' }} /></a>;
-  if (type.startsWith('audio/')) return <audio controls src={url} style={{ height: 38 }} className="max-w-[280px]" />;
-  const icon = type.includes('pdf') ? '📄' : type.includes('video') ? '🎬' : '📎';
-  return <a href={url} download={name} className="flex items-center gap-2 px-3 py-2 rounded-xl max-w-[260px]" style={{ background: 'var(--sat-hover)', border: '1px solid var(--sat-border-2)' }}><span className="text-lg">{icon}</span><span className="text-xs truncate" style={{ color: 'var(--sat-text)' }}>{name}</span></a>;
-}
-
 interface ChannelChatProps {
   conversationId: string;
   channelName: string;
@@ -38,9 +35,10 @@ interface ChannelChatProps {
 }
 
 export function ChannelChat({ conversationId, channelName, socket, currentUser }: ChannelChatProps) {
-  const { messagesByConversationId, setMessages, addMessage, updateMessage } = useChatStore();
+  const { messagesByConversationId, paginationByConversationId, setMessages, prependMessages } = useChatStore();
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [replyTo, setReplyTo] = useState<any | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [reactionPicker, setReactionPicker] = useState<string | null>(null);
@@ -51,23 +49,54 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const messages = useMemo(() => messagesByConversationId[conversationId] ?? [], [messagesByConversationId, conversationId]);
+  // Suppression : pour moi (masquage local) / pour tous
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (currentUser?.id) setHiddenIds(getHiddenMessageIds(currentUser.id));
+  }, [currentUser]);
+
+  const messages = useMemo(
+    () => (messagesByConversationId[conversationId] ?? []).filter((m) => !hiddenIds.has(m.id)),
+    [messagesByConversationId, conversationId, hiddenIds],
+  );
 
   useEffect(() => {
     if (!conversationId) return;
     setLoading(true);
     api.get(`/conversations/${conversationId}/messages`)
-      .then((res) => setMessages(conversationId, res.data.messages))
+      .then((res) => setMessages(conversationId, res.data.messages, {
+        nextCursor: res.data.nextCursor ?? null,
+        hasMore: res.data.hasMore ?? false,
+      }))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [conversationId]);
+
+  const loadOlder = async () => {
+    const pagination = paginationByConversationId[conversationId];
+    if (!pagination?.hasMore || !pagination.nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const res = await api.get(`/conversations/${conversationId}/messages`, {
+        params: { cursor: pagination.nextCursor },
+      });
+      prependMessages(conversationId, res.data.messages ?? [], {
+        nextCursor: res.data.nextCursor ?? null,
+        hasMore: res.data.hasMore ?? false,
+      });
+    } catch { /* silencieux */ }
+    finally { setLoadingMore(false); }
+  };
 
   useEffect(() => {
     if (!socket || !conversationId) return;
     socket.emit('join_conversation', { conversationId });
   }, [socket, conversationId]);
 
-  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages.length, conversationId]);
+  // Auto-scroll seulement pour les nouveaux messages (pas l'historique chargé en haut)
+  const lastMessageId = messages[messages.length - 1]?.id;
+  useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [lastMessageId, conversationId]);
 
   const QUICK = ['❤️', '😂', '👍', '😮', '😢', '🙏'];
 
@@ -79,17 +108,34 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
     setReplyTo(null);
   };
 
+  const [pendingImage, setPendingImage] = useState<File | null>(null);
+
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file || !socket) return;
+    // Image → prévisualisation avec compression + légende
+    if (file.type.startsWith('image/')) { setPendingImage(file); return; }
     if (file.size > 50 * 1024 * 1024) { toast('Fichier trop lourd (50 Mo max)', 'error'); return; }
     try {
       const form = new FormData();
       form.append('file', file);
-      const res = await api.post('/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const res = await api.post('/upload', form);
       socket.emit('send_message', { conversationId, content: '', fileUrl: res.data.url, fileName: res.data.name, fileType: res.data.type });
     } catch { toast('Erreur upload', 'error'); }
-    e.target.value = '';
+  };
+
+  const sendUploadedImage = (up: UploadedFileInfo, caption: string) => {
+    if (!socket) return;
+    socket.emit('send_message', {
+      conversationId,
+      content: caption,
+      fileUrl: up.url,
+      fileName: up.name,
+      fileType: up.type,
+      ...(replyTo ? { replyToId: replyTo.id } : {}),
+    });
+    setReplyTo(null);
   };
 
   const submitEdit = () => {
@@ -109,6 +155,15 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-0.5">
         {loading && <div className="flex justify-center py-10"><Spinner size={22} /></div>}
+        {!loading && paginationByConversationId[conversationId]?.hasMore && (
+          <div className="flex justify-center pb-2">
+            <button onClick={loadOlder} disabled={loadingMore}
+              className="px-4 py-1.5 rounded-full text-xs font-semibold transition disabled:opacity-50"
+              style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)', color: 'var(--sat-muted)' }}>
+              {loadingMore ? 'Chargement…' : '↑ Afficher les messages précédents'}
+            </button>
+          </div>
+        )}
         {!loading && messages.length === 0 && (
           <div className="text-center py-16">
             <div className="w-16 h-16 rounded-2xl mx-auto mb-3 flex items-center justify-center text-3xl" style={{ background: 'var(--sat-surface)' }}>#</div>
@@ -157,7 +212,7 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
                 {msg.replyTo && !isDeleted && (
                   <div className="flex items-center gap-1.5 text-[11px] mb-0.5 pl-2" style={{ color: 'var(--sat-muted)', borderLeft: '2px solid var(--sat-border-2)' }}>
                     <strong style={{ color: colorFor(msg.replyTo.sender?.id || '') }}>{dn(msg.replyTo.sender)}</strong>
-                    <span className="truncate">{msg.replyTo.deletedAt ? 'message supprimé' : msg.replyTo.content || '📎 fichier'}</span>
+                    <span className="truncate">{msg.replyTo.deletedAt ? 'message supprimé' : msg.replyTo.content || 'fichier'}</span>
                   </div>
                 )}
                 {isEditing ? (
@@ -170,9 +225,14 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
                     <button onClick={() => setEditingId(null)} className="text-xs" style={{ color: 'var(--sat-muted)' }}>✕</button>
                   </div>
                 ) : isDeleted ? (
-                  <p className="text-sm italic" style={{ color: 'var(--sat-faint)' }}>🚫 Message supprimé</p>
+                  <p className="text-sm italic" style={{ color: 'var(--sat-faint)' }}>Message supprimé</p>
                 ) : msg.fileUrl ? (
-                  <div className="py-1"><FilePreview url={msg.fileUrl} name={msg.fileName || ''} type={msg.fileType || ''} /></div>
+                  <div className="py-1 space-y-1">
+                    <FilePreview url={msg.fileUrl} name={msg.fileName || ''} type={msg.fileType || ''} maxWidth={260} />
+                    {msg.content && !msg.content.startsWith('🎤') && (
+                      <p className="text-sm leading-relaxed break-words" style={{ color: 'var(--sat-text)' }}>{msg.content}</p>
+                    )}
+                  </div>
                 ) : (
                   <p className="text-sm leading-relaxed break-words" style={{ color: 'var(--sat-text)' }}>
                     {msg.content}
@@ -216,11 +276,9 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
                       <EditIcon size={13} strokeWidth={2.5} />
                     </button>
                   )}
-                  {isMe && (
-                    <button onClick={() => socket?.emit('delete_message', { messageId: msg.id })} className="w-7 h-7 rounded flex items-center justify-center" style={{ color: '#EF4444' }} title="Supprimer">
-                      <TrashIcon size={13} strokeWidth={2.5} />
-                    </button>
-                  )}
+                  <button onClick={() => setDeleteTarget(msg)} className="w-7 h-7 rounded flex items-center justify-center" style={{ color: isMe ? '#EF4444' : 'var(--sat-muted)' }} title="Supprimer">
+                    <TrashIcon size={13} strokeWidth={2.5} />
+                  </button>
                 </div>
               )}
             </div>
@@ -228,6 +286,21 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
         })}
         <div ref={endRef} />
       </div>
+
+      {/* Prévisualisation d'image avant envoi */}
+      {pendingImage && (
+        <ImageSendModal file={pendingImage} onSend={sendUploadedImage} onClose={() => setPendingImage(null)} />
+      )}
+
+      {/* Dialogue de suppression */}
+      {deleteTarget && (
+        <DeleteMessageDialog
+          canDeleteForAll={deleteTarget.sender?.id === currentUser?.id}
+          onDeleteForMe={() => { if (currentUser?.id) setHiddenIds(hideMessageForMe(currentUser.id, deleteTarget.id)); }}
+          onDeleteForAll={() => socket?.emit('delete_message', { messageId: deleteTarget.id })}
+          onClose={() => setDeleteTarget(null)}
+        />
+      )}
 
       {/* Input */}
       <div className="px-4 pb-5 pt-0 flex-shrink-0">

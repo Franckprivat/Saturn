@@ -8,7 +8,8 @@ interface SaturnLogoProps {
 }
 
 export function SaturnLogo({ size = 40, className = '', tone = 'auto', glow = false }: SaturnLogoProps) {
-  const invert = tone === 'auto' ? 'var(--logo-invert, 0)' : tone === 'light' ? '1' : '0';
+  // /logo.png est BLANC : invert(1) → rendu noir ('dark'), invert(0) → rendu blanc ('light')
+  const invert = tone === 'auto' ? 'var(--logo-invert, 1)' : tone === 'dark' ? '1' : '0';
   const filter = glow
     ? `invert(${invert}) drop-shadow(0 0 10px var(--sat-accent-glow)) drop-shadow(0 0 20px var(--sat-accent-glow)) drop-shadow(0 3px 10px rgba(0,0,0,0.18))`
     : `invert(${invert})`;
@@ -56,7 +57,7 @@ export function SaturnLogoBadge({
         alt="Saturn"
         width={size - pad * 2}
         height={size - pad * 2}
-        style={{ objectFit: 'contain', display: 'block', filter: 'invert(1)' }}
+        style={{ objectFit: 'contain', display: 'block' }}
       />
     </div>
   );

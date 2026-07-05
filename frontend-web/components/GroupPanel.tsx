@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import { api } from '@/lib/api';
+import { mediaUrl } from '@/lib/media';
 import { Avatar } from './Avatar';
 
 interface Member {
@@ -182,12 +183,18 @@ export function GroupPanel({
   const toggleNewMember = (id: string) =>
     setSelectedNew((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
 
-  const fileIcon = (type: string) => {
-    if (type.startsWith('image/')) return '🖼️';
-    if (type.includes('pdf')) return '📄';
-    if (type.includes('video')) return '🎬';
-    return '📎';
-  };
+  const FileTypeIcon = ({ type }: { type: string }) => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}
+      strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--sat-accent)' }}>
+      {type.startsWith('image/') ? (
+        <><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></>
+      ) : type.includes('video') ? (
+        <><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" /></>
+      ) : (
+        <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></>
+      )}
+    </svg>
+  );
 
   return (
     <aside
@@ -228,7 +235,7 @@ export function GroupPanel({
             style={{ background: 'linear-gradient(135deg, var(--sat-accent), var(--sat-accent2))' }}
           >
             {editImage
-              ? <img src={editImage} alt="group" className="w-full h-full object-cover" />
+              ? <img src={mediaUrl(editImage)} alt="group" className="w-full h-full object-cover" />
               : name.charAt(0).toUpperCase()}
           </div>
 
@@ -635,14 +642,14 @@ export function GroupPanel({
           <div className="p-3 space-y-1.5">
             {attachments.filter((a) => a.fileUrl).length === 0 ? (
               <div className="flex flex-col items-center py-14 gap-3">
-                <span className="text-4xl opacity-20">📎</span>
+                <svg className="opacity-20" width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--sat-muted)' }}><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
                 <p className="text-xs" style={{ color: 'var(--sat-muted)' }}>Aucun fichier partagé dans ce groupe</p>
               </div>
             ) : (
               attachments.filter((a) => a.fileUrl).map((a) => (
                 <a
                   key={a.id}
-                  href={a.fileUrl}
+                  href={mediaUrl(a.fileUrl)}
                   download={a.fileName}
                   target="_blank"
                   rel="noreferrer"
@@ -651,7 +658,7 @@ export function GroupPanel({
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--sat-hover)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--sat-panel)')}
                 >
-                  <span className="text-xl flex-shrink-0">{fileIcon(a.fileType)}</span>
+                  <span className="flex-shrink-0"><FileTypeIcon type={a.fileType} /></span>
                   <div className="flex-1 min-w-0">
                     <p className="text-xs font-semibold truncate" style={{ color: 'var(--sat-text)' }}>{a.fileName}</p>
                     <p className="text-[10px]" style={{ color: 'var(--sat-faint)' }}>

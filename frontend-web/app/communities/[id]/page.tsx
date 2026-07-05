@@ -1,12 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { mediaUrl } from '@/lib/media';
 import { authClient } from '@/lib/auth-client';
 import { useChatSocket } from '@/hooks/useChatSocket';
 import { useVoiceChannel } from '@/hooks/useVoiceChannel';
-import { useChatStore } from '@/store/chatStore';
 import {
   useCommunityStore, canManage, canAdmin, ROLE_LABELS, ROLE_COLORS,
   type CommunityDetail, type Channel, type CommunityRole,
@@ -16,6 +16,8 @@ import { Spinner, PageLoader } from '@/components/Spinner';
 import { ToastHost, toast } from '@/components/Toast';
 import { ChannelChat } from '@/components/communities/ChannelChat';
 import { CreateCommunityModal } from '@/components/communities/CreateCommunityModal';
+import { InvitePeopleModal } from '@/components/communities/InvitePeopleModal';
+import { CommunityManageModal } from '@/components/communities/CommunityManageModal';
 import { MicIcon, MicOffIcon, PhoneOffIcon, SpeakerIcon } from '@/components/Icons';
 
 function dn(u: { nickname?: string | null; email?: string | null } | null | undefined) {
@@ -29,7 +31,6 @@ export default function CommunityPage() {
   const router = useRouter();
   const communityId = params?.id as string;
   const socket = useChatSocket();
-  const { addMessage, updateMessage } = useChatStore();
   const { communities, setCommunities } = useCommunityStore();
 
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -39,18 +40,20 @@ export default function CommunityPage() {
   const [showMembers, setShowMembers] = useState(true);
   const [voiceUsers, setVoiceUsers] = useState<Record<string, string[]>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [addChannel, setAddChannel] = useState<null | { categoryId: string | null }>(null);
   const [memberMenu, setMemberMenu] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showAddMember, setShowAddMember] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
+  const [showManage, setShowManage] = useState(false);
   const [friends, setFriends] = useState<any[]>([]);
 
   const voice = useVoiceChannel(socket);
 
   // ── Chargement ──
   useEffect(() => {
-    authClient.getSession().then(({ data }) => { if (data?.user) setCurrentUser(data.user); });
+    authClient.getSession().then(({ data }) => { if (data?.user) setCurrentUser(data.user); }).catch(() => {});
     api.get('/communities').then((r) => setCommunities(r.data)).catch(() => {});
     api.get('/friends').then((r) => setFriends(r.data)).catch(() => {});
   }, []);
@@ -74,30 +77,27 @@ export default function CommunityPage() {
     });
   }, [communityId]);
 
-  // ── Socket : messages + présence vocale ──
+  // ── Socket : présence de la communauté + état vocal ──
+  // (messages, réactions et éditions sont gérés par le pont global dans AppShell)
   useEffect(() => {
-    if (!socket) return;
-    const onMsg = (msg: any) => addMessage(msg.conversationId, msg);
-    const onEdit = (msg: any) => updateMessage(msg.conversationId, msg.id, { content: msg.content, editedAt: msg.editedAt });
-    const onDel = ({ messageId, conversationId }: any) => updateMessage(conversationId, messageId, { deletedAt: new Date().toISOString(), content: '', fileUrl: null });
-    const onReact = ({ messageId, reactions }: any) => {
-      const conv = currentChannel?.conversationId;
-      if (conv) updateMessage(conv, messageId, { reactions });
-    };
+    if (!socket || !communityId) return;
     const onVoiceState = ({ channelId, users }: any) => setVoiceUsers((prev) => ({ ...prev, [channelId]: users }));
-    socket.on('new_message', onMsg);
-    socket.on('message_edited', onEdit);
-    socket.on('message_deleted', onDel);
-    socket.on('reaction_updated', onReact);
     socket.on('voice_state', onVoiceState);
-    return () => {
-      socket.off('new_message', onMsg);
-      socket.off('message_edited', onEdit);
-      socket.off('message_deleted', onDel);
-      socket.off('reaction_updated', onReact);
-      socket.off('voice_state', onVoiceState);
+
+    // Rejoindre la room de la communauté et récupérer l'occupation vocale actuelle
+    const joinCommunity = () => {
+      socket.emit('join_community', { communityId }, (res: any) => {
+        if (res?.voiceStates) setVoiceUsers((prev) => ({ ...prev, ...res.voiceStates }));
+      });
     };
-  }, [socket, currentChannel, addMessage, updateMessage]);
+    joinCommunity();
+    socket.on('connect', joinCommunity); // re-join après reconnexion
+
+    return () => {
+      socket.off('voice_state', onVoiceState);
+      socket.off('connect', joinCommunity);
+    };
+  }, [socket, communityId]);
 
   const myRole = detail?.myRole ?? 'MEMBER';
   const userById = useMemo(() => {
@@ -126,13 +126,11 @@ export default function CommunityPage() {
   };
 
   const leaveCommunity = async () => {
-    if (!confirm('Quitter cette communauté ?')) return;
     await api.post(`/communities/${communityId}/leave`).catch(() => {});
     router.push('/communities');
   };
 
   const deleteCommunity = async () => {
-    if (!confirm('Supprimer définitivement cette communauté ? Cette action est irréversible.')) return;
     await api.delete(`/communities/${communityId}`).catch(() => {});
     router.push('/communities');
   };
@@ -160,8 +158,16 @@ export default function CommunityPage() {
     setMemberMenu(null);
   };
   const kickMember = async (userId: string) => {
-    if (!confirm('Exclure ce membre ?')) return;
+    if (!confirm('Exclure ce membre ? Il pourra revenir via une invitation.')) return;
     await api.delete(`/communities/${communityId}/members/${userId}`).then(loadDetail).catch(() => toast('Action refusée', 'error'));
+    setMemberMenu(null);
+  };
+
+  const banMember = async (userId: string) => {
+    const reason = window.prompt('Bannir ce membre ? Il ne pourra plus rejoindre, même avec un lien.\nRaison (optionnelle) :');
+    if (reason === null) return;
+    await api.post(`/communities/${communityId}/bans`, { userId, reason: reason || undefined })
+      .then(loadDetail).catch(() => toast('Action refusée', 'error'));
     setMemberMenu(null);
   };
 
@@ -194,7 +200,7 @@ export default function CommunityPage() {
             <button key={c.id} onClick={() => router.push(`/communities/${c.id}`)} title={c.name}
               className="relative w-11 h-11 rounded-2xl flex items-center justify-center text-sm font-bold overflow-hidden transition-all text-white flex-shrink-0"
               style={{ background: c.image ? 'transparent' : 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))', borderRadius: active ? '32%' : '50%', boxShadow: active ? '0 0 0 2px var(--sat-accent)' : 'none' }}>
-              {c.image ? <img src={c.image} className="w-full h-full object-cover" alt="" /> : c.name.charAt(0).toUpperCase()}
+              {c.image ? <img src={mediaUrl(c.image)} className="w-full h-full object-cover" alt="" /> : c.name.charAt(0).toUpperCase()}
             </button>
           );
         })}
@@ -218,24 +224,23 @@ export default function CommunityPage() {
           {settingsOpen && (
             <div className="absolute top-12 left-2 right-2 z-30 rounded-xl py-1.5 shadow-xl"
               style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)' }}>
-              <button onClick={openInvite} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition hover:bg-[var(--sat-hover)]" style={{ color: 'var(--sat-accent)' }}>
-                🔗 Inviter des gens
+              <button onClick={openInvite} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition hover:bg-[var(--sat-hover)]" style={{ color: 'var(--sat-accent)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--sat-hover)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                Inviter des gens
               </button>
-              {canAdmin(myRole) && (
-                <button onClick={renameCommunity} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition hover:bg-[var(--sat-hover)]" style={{ color: 'var(--sat-text)' }}>
-                  ✏️ Renommer
+              {canManage(myRole) && (
+                <button onClick={() => { setSettingsOpen(false); setShowManage(true); }}
+                  className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition"
+                  style={{ color: 'var(--sat-text)' }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--sat-hover)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                  Gestion des invitations
                 </button>
               )}
-              {myRole !== 'OWNER' && (
-                <button onClick={leaveCommunity} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition hover:bg-[var(--sat-hover)]" style={{ color: '#EF4444' }}>
-                  🚪 Quitter
-                </button>
-              )}
-              {myRole === 'OWNER' && (
-                <button onClick={deleteCommunity} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition hover:bg-[var(--sat-hover)]" style={{ color: '#EF4444' }}>
-                  🗑 Supprimer la communauté
-                </button>
-              )}
+              <button onClick={() => { setSettingsOpen(false); setShowSettings(true); }} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition"
+                style={{ color: 'var(--sat-text)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--sat-hover)')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                Paramètres
+              </button>
             </div>
           )}
         </div>
@@ -279,9 +284,9 @@ export default function CommunityPage() {
         {/* Barre vocale (si connecté) */}
         {voice.activeChannelId && (
           <div className="px-3 py-2.5 flex items-center gap-2" style={{ borderTop: '1px solid var(--sat-border)', background: 'var(--sat-surface)' }}>
-            <span className="w-2 h-2 rounded-full" style={{ background: 'var(--sat-online)' }} />
+            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 transition-transform" style={{ background: 'var(--sat-online)', transform: voice.selfSpeaking ? 'scale(1.4)' : 'scale(1)', boxShadow: voice.selfSpeaking ? '0 0 0 3px rgba(34,197,94,0.3)' : 'none' }} />
             <div className="flex-1 min-w-0">
-              <p className="text-[11px] font-bold" style={{ color: 'var(--sat-online)' }}>Vocal connecté</p>
+              <p className="text-[11px] font-bold" style={{ color: 'var(--sat-online)' }}>{voice.selfSpeaking ? 'Tu parles…' : 'Vocal connecté'}</p>
               <p className="text-[10px] truncate" style={{ color: 'var(--sat-muted)' }}>
                 {[...detail.categories.flatMap((c) => c.channels), ...detail.channels].find((c) => c.id === voice.activeChannelId)?.name}
               </p>
@@ -290,6 +295,15 @@ export default function CommunityPage() {
               className="w-8 h-8 rounded-lg flex items-center justify-center transition"
               style={{ background: voice.selfMuted ? 'rgba(239,68,68,0.12)' : 'var(--sat-hover)', color: voice.selfMuted ? '#EF4444' : 'var(--sat-text)' }}>
               {voice.selfMuted ? <MicOffIcon size={16} /> : <MicIcon size={16} />}
+            </button>
+            <button onClick={voice.toggleDeafen} title={voice.deafened ? 'Réactiver le son' : 'Se rendre sourd'}
+              className="w-8 h-8 rounded-lg flex items-center justify-center transition"
+              style={{ background: voice.deafened ? 'rgba(239,68,68,0.12)' : 'var(--sat-hover)', color: voice.deafened ? '#EF4444' : 'var(--sat-text)' }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 14v-2a9 9 0 0 1 18 0v2" />
+                <path d="M21 16a2 2 0 0 1-2 2h-1v-6h1a2 2 0 0 1 2 2zM3 16a2 2 0 0 0 2 2h1v-6H5a2 2 0 0 0-2 2z" />
+                {voice.deafened && <line x1="2" y1="2" x2="22" y2="22" />}
+              </svg>
             </button>
             <button onClick={voice.leave} title="Se déconnecter"
               className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(239,68,68,0.12)', color: '#EF4444' }}>
@@ -363,6 +377,11 @@ export default function CommunityPage() {
                           <button onClick={() => kickMember(mem.user.id)} className="w-full text-left px-3 py-1.5 text-sm transition hover:bg-[var(--sat-hover)]" style={{ color: '#EF4444' }}>
                             Exclure
                           </button>
+                          {canAdmin(myRole) && (
+                            <button onClick={() => banMember(mem.user.id)} className="w-full text-left px-3 py-1.5 text-sm transition hover:bg-[var(--sat-hover)]" style={{ color: '#EF4444' }}>
+                              Bannir
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -390,12 +409,30 @@ export default function CommunityPage() {
         />
       )}
       {showInvite && (
-        <InviteModal
+        <InvitePeopleModal
           communityId={communityId}
           communityName={detail.name}
           friends={friends}
           existingIds={detail.members.map((m) => m.user.id)}
           onClose={() => setShowInvite(false)}
+        />
+      )}
+      {showManage && (
+        <CommunityManageModal
+          communityId={communityId}
+          communityName={detail.name}
+          onClose={() => { setShowManage(false); loadDetail(); }}
+        />
+      )}
+      {showSettings && (
+        <CommunitySettingsModal
+          detail={detail}
+          myRole={myRole}
+          communityId={communityId}
+          onClose={() => setShowSettings(false)}
+          onUpdated={loadDetail}
+          onLeave={leaveCommunity}
+          onDelete={deleteCommunity}
         />
       )}
       <ToastHost />
@@ -451,8 +488,8 @@ function VoiceStage({ channel, voice, userById, currentUserId }: {
   const connected = voice.activeChannelId === channel.id;
   const peerList = Object.values(voice.peers);
   const tiles = [
-    ...(connected ? [{ userId: currentUserId || 'me', muted: voice.selfMuted, self: true }] : []),
-    ...peerList.map((p) => ({ userId: p.userId, muted: p.muted, self: false })),
+    ...(connected ? [{ userId: currentUserId || 'me', muted: voice.selfMuted, speaking: voice.selfSpeaking, self: true }] : []),
+    ...peerList.map((p) => ({ userId: p.userId, muted: p.muted, speaking: p.speaking, self: false })),
   ];
 
   return (
@@ -481,7 +518,12 @@ function VoiceStage({ channel, voice, userById, currentUserId }: {
                 const u = t.self ? { id: currentUserId } : userById[t.userId];
                 return (
                   <div key={t.userId} className="flex flex-col items-center gap-2">
-                    <div className="relative w-24 h-24 rounded-2xl flex items-center justify-center" style={{ background: 'var(--sat-surface)', border: `2px solid ${t.muted ? 'transparent' : 'var(--sat-online)'}` }}>
+                    <div className="relative w-24 h-24 rounded-2xl flex items-center justify-center transition-all duration-150"
+                      style={{
+                        background: 'var(--sat-surface)',
+                        border: `3px solid ${t.speaking ? 'var(--sat-online)' : 'transparent'}`,
+                        boxShadow: t.speaking ? '0 0 0 3px rgba(34,197,94,0.25)' : 'none',
+                      }}>
                       <Avatar user={u || { id: t.userId }} size="lg" className="w-16 h-16" />
                       {t.muted && <span className="absolute bottom-1 right-1 w-6 h-6 rounded-full flex items-center justify-center text-white" style={{ background: '#EF4444' }}><MicOffIcon size={13} /></span>}
                     </div>
@@ -508,132 +550,153 @@ function VoiceStage({ channel, voice, userById, currentUserId }: {
   );
 }
 
-// ── Modale invitation ──
-function InviteModal({ communityId, communityName, friends, existingIds, onClose }: {
-  communityId: string; communityName: string; friends: any[]; existingIds: string[]; onClose: () => void;
+// ── Modale paramètres communauté ──
+function CommunitySettingsModal({ detail, myRole, communityId, onClose, onUpdated, onLeave, onDelete }: {
+  detail: CommunityDetail; myRole: CommunityRole; communityId: string;
+  onClose: () => void; onUpdated: () => void; onLeave: () => void; onDelete: () => void;
 }) {
-  const [inviteUrl, setInviteUrl] = useState('');
-  const [loadingUrl, setLoadingUrl] = useState(true);
-  const [copied, setCopied] = useState(false);
-  const [search, setSearch] = useState('');
-  const [sent, setSent] = useState<Set<string>>(new Set());
-  const [sending, setSending] = useState<string | null>(null);
+  const [name, setName] = useState(detail.name);
+  const [description, setDescription] = useState((detail as any).description || '');
+  const [image, setImage] = useState((detail as any).image || '');
+  const [saving, setSaving] = useState(false);
+  const [uploadingImg, setUploadingImg] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'danger'>('overview');
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    api.get(`/communities/${communityId}/invite`).then((r) => {
-      setInviteUrl(`${location.origin}/communities/join/${r.data.token}`);
-    }).catch(() => {}).finally(() => setLoadingUrl(false));
-  }, [communityId]);
-
-  const copyLink = async () => {
-    if (!inviteUrl) return;
-    await navigator.clipboard.writeText(inviteUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const sendToDm = async (friend: any) => {
-    if (sending) return;
-    setSending(friend.id);
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingImg(true);
     try {
-      await api.post(`/communities/${communityId}/send-invite-dm`, { userId: friend.id });
-      setSent((prev) => new Set(prev).add(friend.id));
-    } catch { /* silencieux */ }
-    setSending(null);
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await api.post('/upload', fd);
+      setImage(res.data.url);
+    } catch { toast('Erreur lors de l\'upload', 'error'); }
+    setUploadingImg(false);
   };
 
-  const eligible = friends.filter(
-    (f) => !existingIds.includes(f.id) &&
-      (!search.trim() || (f.nickname || f.email || '').toLowerCase().includes(search.toLowerCase()))
-  );
-  const alreadyMembers = friends.filter((f) => existingIds.includes(f.id) &&
-    (!search.trim() || (f.nickname || f.email || '').toLowerCase().includes(search.toLowerCase()))
-  );
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.patch(`/communities/${communityId}`, { name: name.trim(), description: description.trim() || null, image: image || null });
+      onUpdated();
+      onClose();
+    } catch { toast('Erreur lors de la sauvegarde', 'error'); }
+    setSaving(false);
+  };
 
   return (
     <div className="fixed inset-0 z-[9990] flex items-center justify-center p-4"
-      style={{ background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
-      <div className="w-full max-w-md rounded-2xl overflow-hidden shadow-2xl"
+      style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(6px)' }} onClick={onClose}>
+      <div className="w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl"
         style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)' }}
         onClick={(e) => e.stopPropagation()}>
 
-        {/* Header */}
-        <div className="px-5 pt-5 pb-4" style={{ borderBottom: '1px solid var(--sat-border)' }}>
-          <div className="flex items-center justify-between mb-1">
-            <h2 className="font-bold text-base" style={{ color: 'var(--sat-text)' }}>Inviter dans « {communityName} »</h2>
-            <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center transition"
-              style={{ color: 'var(--sat-faint)', background: 'var(--sat-hover)' }}>✕</button>
+        {/* Banner / image de la communauté */}
+        <div className="relative h-24 overflow-hidden"
+          style={{ background: image ? 'transparent' : 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
+          {image && <img src={mediaUrl(image)} alt="" className="w-full h-full object-cover" />}
+          <div className="absolute inset-0 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.3)' }}>
+            {canAdmin(myRole) && (
+              <button onClick={() => fileRef.current?.click()}
+                disabled={uploadingImg}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-white transition hover:opacity-90"
+                style={{ background: 'rgba(0,0,0,0.5)', border: '1.5px solid rgba(255,255,255,0.4)' }}>
+                {uploadingImg ? 'Upload...' : image ? 'Changer l\'image' : 'Ajouter une image'}
+              </button>
+            )}
           </div>
-          <p className="text-xs" style={{ color: 'var(--sat-muted)' }}>Partage le lien ou envoie une invitation directement à tes contacts</p>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
         </div>
 
-        <div className="p-5 space-y-5">
-          {/* Lien d'invitation */}
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--sat-muted)' }}>Lien d'invitation</p>
-            <div className="flex gap-2">
-              <div className="flex-1 flex items-center px-3 py-2.5 rounded-xl text-sm truncate"
-                style={{ background: 'var(--sat-void)', border: '1px solid var(--sat-border-2)', color: 'var(--sat-muted)' }}>
-                {loadingUrl ? '...' : inviteUrl}
+        {/* Tabs */}
+        <div className="flex" style={{ borderBottom: '1px solid var(--sat-border)' }}>
+          {(['overview', 'danger'] as const).map((t) => (
+            <button key={t} onClick={() => setActiveTab(t)}
+              className="px-5 py-3 text-sm font-semibold transition"
+              style={{ color: activeTab === t ? 'var(--sat-accent)' : 'var(--sat-muted)', borderBottom: activeTab === t ? '2px solid var(--sat-accent)' : '2px solid transparent' }}>
+              {t === 'overview' ? 'Vue d\'ensemble' : '⚠ Danger'}
+            </button>
+          ))}
+          <div className="flex-1" />
+          <button onClick={onClose} className="w-10 h-10 m-1 flex items-center justify-center rounded-lg transition"
+            style={{ color: 'var(--sat-faint)', background: 'var(--sat-hover)' }}>✕</button>
+        </div>
+
+        <div className="p-5">
+          {activeTab === 'overview' && (
+            <div className="space-y-4">
+              {/* Infos */}
+              <div className="flex items-center gap-4 mb-2">
+                <div className="w-12 h-12 rounded-2xl overflow-hidden flex-shrink-0 flex items-center justify-center font-bold text-xl text-white"
+                  style={{ background: image ? 'transparent' : 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
+                  {image ? <img src={mediaUrl(image)} alt="" className="w-full h-full object-cover" /> : detail.name.charAt(0)}
+                </div>
+                <div>
+                  <p className="font-bold text-base" style={{ color: 'var(--sat-text)' }}>{detail.name}</p>
+                  <p className="text-xs" style={{ color: 'var(--sat-muted)' }}>{detail.members.length} membre{detail.members.length !== 1 ? 's' : ''}</p>
+                </div>
               </div>
-              <button onClick={copyLink} disabled={loadingUrl}
-                className="px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-1.5 transition flex-shrink-0 disabled:opacity-40"
-                style={{ background: copied ? 'rgba(34,197,94,0.15)' : 'rgba(37,99,235,0.12)', color: copied ? '#22c55e' : 'var(--sat-accent)', border: `1.5px solid ${copied ? '#22c55e' : 'var(--sat-accent)'}` }}>
-                {copied
-                  ? <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>Copié</>
-                  : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>Copier</>}
-              </button>
-            </div>
-          </div>
 
-          {/* Recherche contacts */}
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--sat-muted)' }}>Envoyer à un contact</p>
-            <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher parmi tes contacts..."
-              className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none mb-2"
-              style={{ background: 'var(--sat-void)', border: '1px solid var(--sat-border-2)', color: 'var(--sat-text)' }} />
-
-            <div className="max-h-52 overflow-y-auto space-y-1 pr-0.5">
-              {friends.length === 0 && (
-                <p className="text-xs text-center py-5" style={{ color: 'var(--sat-faint)' }}>Aucun contact disponible</p>
-              )}
-              {eligible.map((f) => {
-                const isSent = sent.has(f.id);
-                const isSending = sending === f.id;
-                return (
-                  <div key={f.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl transition"
-                    style={{ background: 'var(--sat-hover)' }}>
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 overflow-hidden"
-                      style={{ background: f.image ? 'transparent' : 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
-                      {f.image ? <img src={f.image} className="w-full h-full object-cover" alt="" /> : (f.nickname || f.email || '?').charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--sat-text)' }}>{f.nickname || f.email?.split('@')[0]}</p>
-                      <p className="text-[11px] truncate" style={{ color: 'var(--sat-muted)' }}>{f.email}</p>
-                    </div>
-                    <button onClick={() => !isSent && sendToDm(f)} disabled={isSending || isSent}
-                      className="px-3 py-1.5 rounded-lg text-xs font-bold flex-shrink-0 transition disabled:opacity-60"
-                      style={{ background: isSent ? 'rgba(34,197,94,0.12)' : 'rgba(37,99,235,0.1)', color: isSent ? '#22c55e' : 'var(--sat-accent)', border: `1px solid ${isSent ? '#22c55e' : 'var(--sat-accent)'}` }}>
-                      {isSending ? '...' : isSent ? '✓ Envoyé' : 'Inviter'}
+              {canAdmin(myRole) ? (
+                <>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest block mb-1.5" style={{ color: 'var(--sat-muted)' }}>Nom de la communauté</label>
+                    <input value={name} onChange={(e) => setName(e.target.value)}
+                      className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none"
+                      style={{ background: 'var(--sat-void)', border: '1px solid var(--sat-border-2)', color: 'var(--sat-text)' }} />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-widest block mb-1.5" style={{ color: 'var(--sat-muted)' }}>Description</label>
+                    <textarea value={description} onChange={(e) => setDescription(e.target.value)}
+                      rows={3} placeholder="Décris ta communauté..."
+                      className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none resize-none"
+                      style={{ background: 'var(--sat-void)', border: '1px solid var(--sat-border-2)', color: 'var(--sat-text)' }} />
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <button onClick={onClose} className="px-4 py-2.5 rounded-xl text-sm font-medium" style={{ background: 'var(--sat-hover)', color: 'var(--sat-muted)' }}>Annuler</button>
+                    <button onClick={handleSave} disabled={saving || !name.trim()}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition disabled:opacity-40"
+                      style={{ background: 'var(--sat-accent)' }}>
+                      {saving ? 'Enregistrement...' : 'Enregistrer les modifications'}
                     </button>
                   </div>
-                );
-              })}
-              {alreadyMembers.map((f) => (
-                <div key={f.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl opacity-40"
-                  style={{ background: 'var(--sat-hover)' }}>
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 overflow-hidden"
-                    style={{ background: f.image ? 'transparent' : 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
-                    {f.image ? <img src={f.image} className="w-full h-full object-cover" alt="" /> : (f.nickname || f.email || '?').charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate" style={{ color: 'var(--sat-text)' }}>{f.nickname || f.email?.split('@')[0]}</p>
-                  </div>
-                  <span className="text-[11px] font-semibold" style={{ color: 'var(--sat-muted)' }}>Déjà membre</span>
+                </>
+              ) : (
+                <div className="py-4 text-center">
+                  <p className="text-sm" style={{ color: 'var(--sat-muted)' }}>Seuls les administrateurs peuvent modifier la communauté.</p>
                 </div>
-              ))}
+              )}
             </div>
-          </div>
+          )}
+
+          {activeTab === 'danger' && (
+            <div className="space-y-3">
+              {myRole !== 'OWNER' && (
+                <button onClick={onLeave}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-left hover:opacity-90"
+                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}>
+                  <span className="text-xl">🚪</span>
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: '#EF4444' }}>Quitter la communauté</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--sat-faint)' }}>Tu pourras la rejoindre à nouveau via une invitation.</p>
+                  </div>
+                </button>
+              )}
+              {myRole === 'OWNER' && (
+                <button onClick={onDelete}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition text-left hover:opacity-90"
+                  style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}>
+                  <span className="text-xl">🗑</span>
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: '#EF4444' }}>Supprimer la communauté</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--sat-faint)' }}>Action irréversible. Tous les salons et messages seront perdus.</p>
+                  </div>
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -670,7 +733,7 @@ function AddMemberModal({ friends, existingIds, onClose, onAdd }: {
               onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--sat-hover)')}>
               <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 overflow-hidden"
                 style={{ background: f.image ? 'transparent' : 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
-                {f.image ? <img src={f.image} className="w-full h-full object-cover" alt="" /> : (f.nickname || f.email || '?').charAt(0).toUpperCase()}
+                {f.image ? <img src={mediaUrl(f.image)} className="w-full h-full object-cover" alt="" /> : (f.nickname || f.email || '?').charAt(0).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold truncate" style={{ color: 'var(--sat-text)' }}>{f.nickname || f.email?.split('@')[0]}</p>

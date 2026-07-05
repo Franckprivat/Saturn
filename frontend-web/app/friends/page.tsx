@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import { Avatar } from '@/components/Avatar';
 import { Spinner } from '@/components/Spinner';
+import { useBadgeStore } from '@/store/badgeStore';
 
 type FriendUser = { id: string; nickname: string; image?: string | null; avatarColor?: string | null; bio?: string | null };
 type FriendRequest = {
@@ -58,7 +59,7 @@ export default function FriendsPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    authClient.getSession().then(({ data }) => { if (data?.user) setCurrentUser(data.user); });
+    authClient.getSession().then(({ data }) => { if (data?.user) setCurrentUser(data.user); }).catch(() => {});
     fetchFriends();
     fetchRequests();
   }, []);
@@ -75,6 +76,8 @@ export default function FriendsPage() {
     try { const res = await api.get('/friends/requests'); setRequests(res.data); }
     catch (err: any) { setError(err?.response?.data?.message || 'Erreur'); }
     finally { setLoadingRequests(false); }
+    // Le badge de la sidebar suit le nombre de demandes en attente
+    useBadgeStore.getState().refreshFriendRequests();
   };
 
   const handleSearch = async () => {
@@ -108,8 +111,27 @@ export default function FriendsPage() {
     } catch (err: any) { setError(err?.response?.data?.message || 'Erreur'); }
   };
 
+  const handleBlock = async (userId: string) => {
+    if (!confirm('Bloquer cet utilisateur ? Il ne pourra plus t\'envoyer de messages ni de demandes d\'ami.')) return;
+    try {
+      await api.post(`/friends/block/${userId}`);
+      setFriends((prev) => prev.filter((f) => f.id !== userId));
+    } catch (err: any) { setError(err?.response?.data?.message || 'Erreur'); }
+  };
+
+  const handleRemoveFriend = async (userId: string) => {
+    if (!confirm('Retirer cet ami ? Vous ne pourrez plus vous envoyer de messages privés.')) return;
+    try {
+      await api.delete(`/friends/${userId}`);
+      setFriends((prev) => prev.filter((f) => f.id !== userId));
+      await fetchRequests();
+    } catch (err: any) { setError(err?.response?.data?.message || 'Erreur'); }
+  };
+
   const isIncoming = (r: FriendRequest) => r.addressee.id === currentUser?.id;
-  const pendingCount = requests.filter((r) => r.status === 'PENDING' && isIncoming(r)).length;
+  // L'onglet Demandes n'affiche que les demandes en attente
+  const pendingRequests = requests.filter((r) => r.status === 'PENDING');
+  const pendingCount = pendingRequests.filter((r) => isIncoming(r)).length;
 
   const alreadyLinked = (userId: string) =>
     sentRequests.has(userId) ||
@@ -176,17 +198,43 @@ export default function FriendsPage() {
               {loadingFriends && <div className="flex justify-center py-10"><Spinner size={20} /></div>}
               {!loadingFriends && friends.length === 0 && (
                 <div className="text-center py-16 space-y-2">
-                  <p className="text-3xl opacity-30">👥</p>
+                  <svg className="mx-auto opacity-30" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--sat-muted)' }}>
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+                  </svg>
                   <p className="text-xs" style={{ color: 'var(--sat-muted)' }}>Aucun ami pour le moment.<br />Utilise "Ajouter un ami" pour en trouver.</p>
                 </div>
               )}
               {friends.map((f) => (
                 <UserCard key={f.id} user={f}
                   right={
-                    <button onClick={() => handleOpenDm(f.id)}
-                      className="px-3 py-1.5 rounded-xl bg-[#2563EB] hover:bg-[#60A5FA] text-white text-xs font-semibold transition">
-                      Message
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => handleOpenDm(f.id)}
+                        className="px-3 py-1.5 rounded-xl bg-[#2563EB] hover:bg-[#60A5FA] text-white text-xs font-semibold transition">
+                        Message
+                      </button>
+                      <button
+                        onClick={() => handleRemoveFriend(f.id)}
+                        title="Retirer l'ami"
+                        className="w-8 h-8 rounded-xl flex items-center justify-center transition"
+                        style={{ background: 'var(--sat-hover)', color: 'var(--sat-muted)' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.12)'; e.currentTarget.style.color = '#EF4444'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--sat-hover)'; e.currentTarget.style.color = 'var(--sat-muted)'; }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="8.5" cy="7" r="4" /><line x1="18" y1="8" x2="23" y2="13" /><line x1="23" y1="8" x2="18" y2="13" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => handleBlock(f.id)}
+                        title="Bloquer"
+                        className="w-8 h-8 rounded-xl flex items-center justify-center transition"
+                        style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444' }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239,68,68,0.18)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(239,68,68,0.08)')}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="10" /><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
+                        </svg>
+                      </button>
+                    </div>
                   }
                 />
               ))}
@@ -197,20 +245,22 @@ export default function FriendsPage() {
           {tab === 'requests' && (
             <>
               {loadingRequests && <div className="flex justify-center py-10"><Spinner size={20} /></div>}
-              {!loadingRequests && requests.length === 0 && (
+              {!loadingRequests && pendingRequests.length === 0 && (
                 <div className="text-center py-16 space-y-2">
-                  <p className="text-3xl opacity-30">📬</p>
+                  <svg className="mx-auto opacity-30" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--sat-muted)' }}>
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" /><polyline points="22,6 12,13 2,6" />
+                  </svg>
                   <p className="text-xs" style={{ color: 'var(--sat-muted)' }}>Aucune demande en attente.</p>
                 </div>
               )}
-              {requests.map((r) => {
+              {pendingRequests.map((r) => {
                 const incoming = isIncoming(r);
                 const other = incoming ? r.requester : r.addressee;
                 return (
                   <UserCard key={r.id} user={other}
                     sub={incoming ? 'Demande reçue' : 'Demande envoyée'}
                     right={
-                      incoming && r.status === 'PENDING' ? (
+                      incoming ? (
                         <div className="flex gap-2">
                           <button onClick={() => handleRespond(r.id, true)}
                             className="px-3 py-1.5 rounded-xl bg-green-600/80 hover:bg-green-500 text-xs font-semibold transition">
@@ -222,9 +272,7 @@ export default function FriendsPage() {
                           </button>
                         </div>
                       ) : (
-                        <span className="text-xs text-[#94A3B8] italic">
-                          {r.status === 'PENDING' ? 'En attente...' : 'Acceptée'}
-                        </span>
+                        <span className="text-xs text-[#94A3B8] italic">En attente...</span>
                       )
                     }
                   />
@@ -257,7 +305,9 @@ export default function FriendsPage() {
               {loadingSearch && <div className="flex justify-center py-10"><Spinner size={20} /></div>}
               {!loadingSearch && searchResults.length === 0 && search.trim() && (
                 <div className="text-center py-10 space-y-2">
-                  <p className="text-2xl opacity-30">🔍</p>
+                  <svg className="mx-auto opacity-30" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--sat-muted)' }}>
+                    <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
                   <p className="text-xs" style={{ color: 'var(--sat-muted)' }}>Aucun utilisateur trouvé pour « {search} »</p>
                 </div>
               )}

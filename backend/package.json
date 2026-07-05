@@ -92,6 +92,10 @@
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
+    "moduleNameMapper": {
+      "better-auth\\.instance$": "<rootDir>/__mocks__/better-auth-instance.mock.ts",
+      "^better-auth/node$": "<rootDir>/__mocks__/better-auth-node.mock.ts"
+    },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
     ],

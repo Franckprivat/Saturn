@@ -27,12 +27,6 @@ export class ConversationsController {
     return this.conversationsService.getConversationById(id, user.id);
   }
 
-  @Post()
-  async createConversation(@Req() req: any, @Body('participantIds') participantIds: string[]) {
-    const user = await getSessionUser(req);
-    return this.conversationsService.createConversation(user.id, participantIds ?? []);
-  }
-
   @Post('group')
   async createGroup(
     @Req() req: any,
@@ -81,11 +75,11 @@ export class ConversationsController {
   ) {
     const user = await getSessionUser(req);
     const result = await this.conversationsService.addMembers(id, user.id, memberIds ?? []);
-    // Émettre un message système par membre ajouté
+    // Message système uniquement pour les membres réellement ajoutés
     for (const memberId of memberIds ?? []) {
       const added = result?.participants.find((p: any) => p.user.id === memberId);
-      const nick = displayName(added?.user, memberId);
-      await this.chatGateway.emitSystemMessage(id, user.id, `a ajouté ${nick} au groupe`);
+      if (!added) continue;
+      await this.chatGateway.emitSystemMessage(id, user.id, `a ajouté ${displayName(added.user)} au groupe`);
     }
     return result;
   }

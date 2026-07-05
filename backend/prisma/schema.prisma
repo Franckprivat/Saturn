@@ -21,6 +21,7 @@ model User {
   bio           String?
   socialLinks   Json?
   avatarColor   String?
+  chatWallpaper String?
 
   sessions      Session[]
   accounts      Account[]
@@ -28,10 +29,18 @@ model User {
   messages               Message[]
   reactions              MessageReaction[]
   readReceipts           ReadReceipt[]
+  deliveryReceipts       DeliveryReceipt[]
   conversations          ConversationParticipant[]
   communityMemberships   CommunityMember[]
   friendRequestsSent     Friendship[] @relation("FriendshipRequester")
   friendRequestsReceived Friendship[] @relation("FriendshipAddressee")
+  callLogs               CallLog[]
+  sentCommunityInvites     CommunityInvite[]      @relation("SentCommunityInvites")
+  receivedCommunityInvites CommunityInvite[]      @relation("ReceivedCommunityInvites")
+  createdInviteLinks       CommunityInviteLink[]  @relation("CreatedInviteLinks")
+  communityJoins           CommunityJoinLog[]     @relation("CommunityJoins")
+  communityJoinRequests    CommunityJoinRequest[] @relation("CommunityJoinRequests")
+  communityBans            CommunityBan[]         @relation("CommunityBans")
 
   @@map("user")
 }
@@ -128,6 +137,7 @@ model Message {
   replies        Message[]         @relation("MessageReply")
   reactions      MessageReaction[]
   readBy         ReadReceipt[]
+  deliveredTo    DeliveryReceipt[]
   pinnedIn       PinnedMessage[]
 }
 
@@ -173,6 +183,19 @@ model ReadReceipt {
   @@unique([messageId, userId])
 }
 
+/// Reçu « distribué » : le message est arrivé sur l'appareil du destinataire
+/// (statut intermédiaire entre envoyé et lu, façon WhatsApp).
+model DeliveryReceipt {
+  id          String   @id @default(uuid())
+  messageId   String
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveredAt DateTime @default(now())
+
+  @@unique([messageId, userId])
+}
+
 model PinnedMessage {
   id             String       @id @default(uuid())
   conversationId String
@@ -206,11 +229,136 @@ model Community {
   image         String?
   ownerId       String
   inviteToken   String?           @unique
+  /// OPEN : un lien valide suffit. APPROVAL : le lien crée une demande d'adhésion.
+  joinPolicy    JoinPolicy        @default(OPEN)
+  /// Rôle minimal par action ({ invite: "MEMBER", ban: "ADMIN", … }) — défauts en service.
+  permissions   Json?
   createdAt     DateTime          @default(now())
   members       CommunityMember[]
   categories    ChannelCategory[]
   channels      Channel[]
   conversations Conversation[]
+  invites       CommunityInvite[]
+  inviteLinks   CommunityInviteLink[]
+  joinRequests  CommunityJoinRequest[]
+  joinLogs      CommunityJoinLog[]
+  bans          CommunityBan[]
+  auditLogs     CommunityAuditLog[]
+}
+
+enum JoinPolicy {
+  OPEN
+  APPROVAL
+}
+
+enum CommunityInviteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+}
+
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// Invitation directe adressée à un utilisateur précis (expire automatiquement).
+model CommunityInvite {
+  id          String                @id @default(uuid())
+  community   Community             @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  communityId String
+  inviter     User                  @relation("SentCommunityInvites", fields: [inviterId], references: [id], onDelete: Cascade)
+  inviterId   String
+  invitee     User                  @relation("ReceivedCommunityInvites", fields: [inviteeId], references: [id], onDelete: Cascade)
+  inviteeId   String
+  message     String?
+  status      CommunityInviteStatus @default(PENDING)
+  createdAt   DateTime              @default(now())
+  expiresAt   DateTime
+  respondedAt DateTime?
+
+  @@index([communityId, status])
+  @@index([inviteeId, status])
+}
+
+/// Lien d'invitation configurable (plusieurs par communauté).
+model CommunityInviteLink {
+  id          String             @id @default(uuid())
+  community   Community          @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  communityId String
+  creator     User               @relation("CreatedInviteLinks", fields: [creatorId], references: [id], onDelete: Cascade)
+  creatorId   String
+  token       String             @unique
+  label       String?
+  maxUses     Int?
+  uses        Int                @default(0)
+  expiresAt   DateTime?
+  disabledAt  DateTime?
+  createdAt   DateTime           @default(now())
+  joins       CommunityJoinLog[]
+
+  @@index([communityId])
+}
+
+/// Parrainage : origine de chaque membre (lien utilisé ou inviteur direct).
+model CommunityJoinLog {
+  id           String               @id @default(uuid())
+  community    Community            @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  communityId  String
+  user         User                 @relation("CommunityJoins", fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  viaLink      CommunityInviteLink? @relation(fields: [viaLinkId], references: [id], onDelete: SetNull)
+  viaLinkId    String?
+  viaInviterId String?
+  joinedAt     DateTime             @default(now())
+
+  @@index([communityId])
+}
+
+/// Demande d'adhésion (communautés en mode APPROVAL).
+model CommunityJoinRequest {
+  id            String            @id @default(uuid())
+  community     Community         @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  communityId   String
+  user          User              @relation("CommunityJoinRequests", fields: [userId], references: [id], onDelete: Cascade)
+  userId        String
+  message       String?
+  status        JoinRequestStatus @default(PENDING)
+  createdAt     DateTime          @default(now())
+  respondedAt   DateTime?
+  respondedById String?
+
+  @@index([communityId, status])
+}
+
+model CommunityBan {
+  id          String    @id @default(uuid())
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  communityId String
+  user        User      @relation("CommunityBans", fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  bannedById  String
+  reason      String?
+  createdAt   DateTime  @default(now())
+
+  @@unique([communityId, userId])
+}
+
+/// Journal d'audit des actions liées aux invitations et à la modération.
+model CommunityAuditLog {
+  id           String    @id @default(uuid())
+  community    Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  communityId  String
+  actorId      String
+  action       String
+  targetUserId String?
+  linkId       String?
+  metadata     Json?
+  createdAt    DateTime  @default(now())
+
+  @@index([communityId, createdAt])
 }
 
 model CommunityMember {
@@ -246,6 +394,23 @@ model Channel {
   conversationId String?          @unique
   conversation   Conversation?    @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   createdAt      DateTime         @default(now())
+}
+
+model CallLog {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type           String
+  direction      String
+  status         String
+  duration       Int?
+  withName       String
+  withImage      String?
+  withNickname   String?
+  conversationId String?
+  createdAt      DateTime @default(now())
+
+  @@map("call_log")
 }
 
 enum CommunityRole {
