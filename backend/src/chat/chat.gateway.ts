@@ -80,6 +80,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.onlineUsers.set(session.user.id, prev + 1);
       if (prev === 0) this.server.emit('user_online', { userId: session.user.id });
       client.emit('online_users', { userIds: Array.from(this.onlineUsers.keys()) });
+      // Plancher de « vu à… » dès la connexion : si le serveur meurt brutalement
+      // (pas de handleDisconnect), le dernier passage reste au moins daté d'ici.
+      this.prisma.user
+        .update({ where: { id: session.user.id }, data: { lastSeenAt: new Date() } })
+        .catch(() => {});
       this.logger.log(`Connected: ${session.user.id}`);
     } catch {
       client.disconnect();
@@ -93,7 +98,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const count = (this.onlineUsers.get(userId) ?? 1) - 1;
     if (count <= 0) {
       this.onlineUsers.delete(userId);
-      this.server.emit('user_offline', { userId });
+      const lastSeenAt = new Date();
+      // Persistance « vu à… » (fire-and-forget : la déconnexion ne doit pas bloquer)
+      this.prisma.user
+        .update({ where: { id: userId }, data: { lastSeenAt } })
+        .catch(() => {});
+      this.server.emit('user_offline', { userId, lastSeenAt: lastSeenAt.toISOString() });
     } else {
       this.onlineUsers.set(userId, count);
     }

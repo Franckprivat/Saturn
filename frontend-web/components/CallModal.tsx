@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { PhoneIcon, PhoneOffIcon, MicIcon, MicOffIcon, VideoIcon, VideoOffIcon } from '@/components/Icons';
 import { saveCallEntry } from '@/lib/callLog';
 import { mediaUrl } from '@/lib/media';
+import { setCallTab, clearCallTab } from '@/lib/callTab';
 
 interface CallModalProps {
   socket: any;
@@ -351,6 +352,27 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
     setCameraOff(next);
   };
 
+  // Habillage de l'onglet : titre + favicon téléphone aux couleurs du thème
+  useEffect(() => {
+    if (status === 'ended') { clearCallTab(); return; }
+    const tabState =
+      status === 'active' ? 'active'
+      : status === 'reconnecting' ? 'reconnecting'
+      : isIncoming ? 'incoming'
+      : 'ringing';
+    setCallTab(tabState, callerName);
+  }, [status, isIncoming, callerName]);
+  useEffect(() => () => clearCallTab(), []);
+
+  // Plein écran pour la vidéo
+  const videoContainerRef = useRef<HTMLDivElement>(null);
+  const toggleFullscreen = () => {
+    const el = videoContainerRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else el.requestFullscreen().catch(() => {});
+  };
+
   const initial = (callerName || '?').charAt(0).toUpperCase();
   const statusLabel =
     status === 'ringing' ? (isIncoming ? 'Appel entrant…' : 'Sonnerie…')
@@ -364,27 +386,46 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
       style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(10px)' }}>
 
       {callType === 'video' ? (
-        <div className="relative rounded-2xl overflow-hidden shadow-2xl" style={{ width: 560, background: '#0f0f1a' }}>
-          <div className="relative" style={{ height: 360 }}>
+        <div className="relative rounded-2xl overflow-hidden shadow-2xl"
+          style={{ width: 'min(92vw, 720px)', background: 'var(--sat-void)', border: '1px solid var(--sat-border-2)' }}>
+          <div ref={videoContainerRef} className="relative aspect-video" style={{ background: 'var(--sat-void)' }}>
             <video ref={remoteRef} autoPlay playsInline className="w-full h-full object-cover" />
-            {status !== 'active' && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3" style={{ background: 'rgba(15,15,26,0.85)' }}>
+            {(status !== 'active' && status !== 'reconnecting') && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3" style={{ background: 'var(--sat-void)' }}>
                 <Avatar image={callerImage} initial={initial} ringing={status === 'ringing'} />
-                <p className="text-white font-bold text-lg">{callerName}</p>
-                <p className="text-sm" style={{ color: 'rgba(255,255,255,0.6)' }}>{statusLabel}</p>
+                <p className="font-bold text-lg" style={{ color: 'var(--sat-text)' }}>{callerName}</p>
+                <p className="text-sm" style={{ color: 'var(--sat-muted)' }}>{statusLabel}</p>
               </div>
             )}
-            <video ref={localRef} autoPlay playsInline muted
-              className="absolute bottom-3 right-3 w-28 rounded-xl object-cover shadow-lg"
-              style={{ height: 80, border: '2px solid rgba(255,255,255,0.2)' }} />
+            {/* Aperçu local en miroir (vue selfie) */}
+            <div className="absolute bottom-3 right-3 rounded-xl overflow-hidden shadow-lg"
+              style={{ width: 112, height: 80, border: '2px solid var(--sat-accent)', background: 'var(--sat-surface)' }}>
+              <video ref={localRef} autoPlay playsInline muted
+                className="w-full h-full object-cover"
+                style={{ transform: 'scaleX(-1)', display: cameraOff ? 'none' : 'block' }} />
+              {cameraOff && (
+                <div className="w-full h-full flex items-center justify-center" style={{ color: 'var(--sat-faint)' }}>
+                  <VideoOffIcon size={20} />
+                </div>
+              )}
+            </div>
             {(status === 'active' || status === 'reconnecting') && (
               <>
                 <div className="absolute top-3 left-3 px-3 py-1 rounded-full text-white text-xs font-semibold flex items-center gap-2" style={{ background: 'rgba(0,0,0,0.45)' }}>
                   {callerName}
                   <QualityBars quality={quality} />
                 </div>
-                <div className="absolute top-3 right-3 px-3 py-1 rounded-full text-white text-xs font-semibold tabular-nums" style={{ background: 'rgba(0,0,0,0.45)' }}>
-                  {status === 'reconnecting' ? 'Reconnexion…' : formatDuration(duration)}
+                <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                  <div className="px-3 py-1 rounded-full text-white text-xs font-semibold tabular-nums" style={{ background: 'rgba(0,0,0,0.45)' }}>
+                    {status === 'reconnecting' ? 'Reconnexion…' : formatDuration(duration)}
+                  </div>
+                  <button onClick={toggleFullscreen} title="Plein écran"
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-white transition hover:scale-105"
+                    style={{ background: 'rgba(0,0,0,0.45)' }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                    </svg>
+                  </button>
                 </div>
               </>
             )}
@@ -395,13 +436,14 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
             onToggleMute={toggleMute} onToggleCamera={toggleCamera} />
         </div>
       ) : (
-        <div className="rounded-2xl overflow-hidden shadow-2xl" style={{ width: 320, background: 'linear-gradient(145deg,#1a1a2e,#16213e)' }}>
+        <div className="rounded-2xl overflow-hidden shadow-2xl"
+          style={{ width: 320, background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)' }}>
           <audio ref={remoteRef as any} autoPlay />
           <div className="flex flex-col items-center pt-10 pb-6 px-6 gap-4 relative">
             <Avatar image={callerImage} initial={initial} ringing={status === 'ringing'} />
             <div className="text-center z-10">
-              <p className="text-white font-bold text-xl mb-1">{callerName || 'Appel'}</p>
-              <p className="text-sm tabular-nums flex items-center justify-center gap-2" style={{ color: 'rgba(255,255,255,0.55)' }}>
+              <p className="font-bold text-xl mb-1" style={{ color: 'var(--sat-text)' }}>{callerName || 'Appel'}</p>
+              <p className="text-sm tabular-nums flex items-center justify-center gap-2" style={{ color: 'var(--sat-muted)' }}>
                 {statusLabel}
                 {(status === 'active' || status === 'reconnecting') && <QualityBars quality={quality} />}
               </p>
@@ -422,14 +464,15 @@ function Avatar({ image, initial, ringing }: { image?: string; initial: string; 
     <div className="relative flex items-center justify-center">
       {ringing && (
         <>
-          <span className="absolute w-32 h-32 rounded-full animate-ping" style={{ background: 'rgba(99,102,241,0.15)', animationDuration: '1.5s' }} />
-          <span className="absolute w-28 h-28 rounded-full animate-ping" style={{ background: 'rgba(99,102,241,0.2)', animationDuration: '1.5s', animationDelay: '0.4s' }} />
+          <span className="absolute w-32 h-32 rounded-full animate-ping" style={{ background: 'var(--sat-accent-glow)', animationDuration: '1.5s' }} />
+          <span className="absolute w-28 h-28 rounded-full animate-ping" style={{ background: 'var(--sat-accent-glow)', animationDuration: '1.5s', animationDelay: '0.4s' }} />
         </>
       )}
-      <div className="relative w-24 h-24 rounded-full overflow-hidden shadow-xl z-10" style={{ border: '3px solid rgba(255,255,255,0.15)' }}>
+      <div className="relative w-24 h-24 rounded-full overflow-hidden shadow-xl z-10" style={{ border: '3px solid var(--sat-border-2)' }}>
         {image
           ? <img src={mediaUrl(image)} alt="" className="w-full h-full object-cover" />
-          : <div className="w-full h-full flex items-center justify-center text-3xl font-black text-white" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>{initial}</div>}
+          : <div className="w-full h-full flex items-center justify-center text-3xl font-black text-white"
+              style={{ background: 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>{initial}</div>}
       </div>
     </div>
   );
@@ -445,7 +488,8 @@ function CallControls({
   onToggleMute: () => void; onToggleCamera: () => void;
 }) {
   return (
-    <div className="px-5 py-5 flex flex-col items-center gap-3" style={{ background: 'rgba(0,0,0,0.35)' }}>
+    <div className="px-5 py-5 flex flex-col items-center gap-3"
+      style={{ background: 'var(--sat-panel)', borderTop: '1px solid var(--sat-border)' }}>
       {status === 'ringing' && isIncoming ? (
         <div className="flex gap-8">
           <div className="flex flex-col items-center gap-2">
@@ -453,36 +497,44 @@ function CallControls({
               style={{ background: '#EF4444', boxShadow: '0 6px 20px rgba(239,68,68,0.4)' }}>
               <PhoneOffIcon size={26} />
             </button>
-            <span className="text-[11px] text-white/50 font-medium">Refuser</span>
+            <span className="text-[11px] font-medium" style={{ color: 'var(--sat-muted)' }}>Refuser</span>
           </div>
           <div className="flex flex-col items-center gap-2">
             <button onClick={onAccept} className="w-16 h-16 rounded-full flex items-center justify-center text-white transition hover:scale-105 active:scale-95"
-              style={{ background: '#10B981', boxShadow: '0 6px 20px rgba(16,185,129,0.4)' }}>
+              style={{ background: 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))', boxShadow: '0 6px 20px var(--sat-accent-glow)' }}>
               <PhoneIcon size={26} />
             </button>
-            <span className="text-[11px] text-white/50 font-medium">Répondre</span>
+            <span className="text-[11px] font-medium" style={{ color: 'var(--sat-muted)' }}>Répondre</span>
           </div>
         </div>
       ) : status === 'ended' ? (
-        <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.1)' }}>
-          <PhoneOffIcon size={20} style={{ color: 'rgba(255,255,255,0.5)' }} />
+        <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'var(--sat-hover)' }}>
+          <PhoneOffIcon size={20} style={{ color: 'var(--sat-faint)' }} />
         </div>
       ) : (
         <div className="flex gap-3 items-center">
           <div className="flex flex-col items-center gap-1.5">
-            <button onClick={onToggleMute} className="w-12 h-12 rounded-full flex items-center justify-center text-white transition hover:scale-105 active:scale-95"
-              style={{ background: muted ? '#EF4444' : 'rgba(255,255,255,0.15)' }}>
+            <button onClick={onToggleMute} className="w-12 h-12 rounded-full flex items-center justify-center transition hover:scale-105 active:scale-95"
+              style={{
+                background: muted ? '#EF4444' : 'var(--sat-hover)',
+                color: muted ? '#fff' : 'var(--sat-text)',
+                border: muted ? 'none' : '1px solid var(--sat-border-2)',
+              }}>
               {muted ? <MicOffIcon size={20} /> : <MicIcon size={20} />}
             </button>
-            <span className="text-[10px] text-white/40">{muted ? 'Muet' : 'Micro'}</span>
+            <span className="text-[10px]" style={{ color: 'var(--sat-faint)' }}>{muted ? 'Muet' : 'Micro'}</span>
           </div>
           {callType === 'video' && (
             <div className="flex flex-col items-center gap-1.5">
-              <button onClick={onToggleCamera} className="w-12 h-12 rounded-full flex items-center justify-center text-white transition hover:scale-105 active:scale-95"
-                style={{ background: cameraOff ? '#EF4444' : 'rgba(255,255,255,0.15)' }}>
+              <button onClick={onToggleCamera} className="w-12 h-12 rounded-full flex items-center justify-center transition hover:scale-105 active:scale-95"
+                style={{
+                  background: cameraOff ? '#EF4444' : 'var(--sat-hover)',
+                  color: cameraOff ? '#fff' : 'var(--sat-text)',
+                  border: cameraOff ? 'none' : '1px solid var(--sat-border-2)',
+                }}>
                 {cameraOff ? <VideoOffIcon size={20} /> : <VideoIcon size={20} />}
               </button>
-              <span className="text-[10px] text-white/40">{cameraOff ? 'Off' : 'Caméra'}</span>
+              <span className="text-[10px]" style={{ color: 'var(--sat-faint)' }}>{cameraOff ? 'Off' : 'Caméra'}</span>
             </div>
           )}
           <div className="flex flex-col items-center gap-1.5">
@@ -490,7 +542,7 @@ function CallControls({
               style={{ background: '#EF4444', boxShadow: '0 6px 20px rgba(239,68,68,0.4)' }}>
               <PhoneOffIcon size={24} />
             </button>
-            <span className="text-[10px] text-white/40">Raccrocher</span>
+            <span className="text-[10px]" style={{ color: 'var(--sat-faint)' }}>Raccrocher</span>
           </div>
         </div>
       )}

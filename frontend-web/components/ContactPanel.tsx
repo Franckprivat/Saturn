@@ -7,6 +7,7 @@ import { Avatar } from '@/components/Avatar';
 import { Spinner } from '@/components/Spinner';
 import { WALLPAPER_PRESETS } from '@/lib/wallpapers';
 import { BUBBLE_COLORS, bubbleGradient, getConvPrefs, setConvPrefs, type ConvPrefs } from '@/lib/convPrefs';
+import { usePresenceStore, formatLastSeen } from '@/store/presenceStore';
 
 interface ContactPanelProps {
   conversationId: string;
@@ -36,6 +37,7 @@ export function ContactPanel({
   conversationId, currentUserId, contact, online, alias, onAliasChange, onPrefsChange, onClose,
 }: ContactPanelProps) {
   const router = useRouter();
+  const lastSeenLive = usePresenceStore((s) => s.lastSeenById[contact.id]);
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [aliasInput, setAliasInput] = useState(alias);
@@ -125,7 +127,9 @@ export function ContactPanel({
               <p className="text-[11px]" style={{ color: 'var(--sat-faint)' }}>@{contact.nickname || contact.email?.split('@')[0]}</p>
             )}
             <p className="text-xs mt-0.5" style={{ color: online ? 'var(--sat-online)' : 'var(--sat-muted)' }}>
-              {online ? 'En ligne' : 'Hors ligne'}
+              {online
+                ? 'En ligne'
+                : formatLastSeen(lastSeenLive ?? profile?.lastSeenAt) ?? 'Hors ligne'}
             </p>
           </div>
         </div>

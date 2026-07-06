@@ -9,6 +9,7 @@ const USER_SELECT = {
   nickname: true,
   image: true,
   avatarColor: true,
+  lastSeenAt: true,
 } as const;
 
 const PARTICIPANTS_INCLUDE = {

@@ -7,8 +7,9 @@ import { useRouter } from 'next/navigation';
 import { Avatar } from '@/components/Avatar';
 import { Spinner } from '@/components/Spinner';
 import { useBadgeStore } from '@/store/badgeStore';
+import { usePresenceStore, formatLastSeen } from '@/store/presenceStore';
 
-type FriendUser = { id: string; nickname: string; image?: string | null; avatarColor?: string | null; bio?: string | null };
+type FriendUser = { id: string; nickname: string; image?: string | null; avatarColor?: string | null; bio?: string | null; lastSeenAt?: string | null };
 type FriendRequest = {
   id: string;
   status: 'PENDING' | 'ACCEPTED' | 'BLOCKED';
@@ -21,7 +22,9 @@ function cx(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(' ');
 }
 
-function UserCard({ user, right, sub }: { user: FriendUser; right: React.ReactNode; sub?: string }) {
+function UserCard({ user, right, sub, subColor, online }: {
+  user: FriendUser; right: React.ReactNode; sub?: string; subColor?: string; online?: boolean;
+}) {
   return (
     <div
       className="flex items-center justify-between rounded-xl px-4 py-3 transition"
@@ -30,12 +33,21 @@ function UserCard({ user, right, sub }: { user: FriendUser; right: React.ReactNo
       onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--sat-surface)')}
     >
       <div className="flex items-center gap-3">
-        <Avatar user={user} size="md" className="w-11 h-11 rounded-2xl" />
+        <div className="relative flex-shrink-0">
+          <Avatar user={user} size="md" className="w-11 h-11 rounded-2xl" />
+          {online !== undefined && (
+            <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full"
+              style={{
+                background: online ? 'var(--sat-online)' : 'var(--sat-offline)',
+                border: '2px solid var(--sat-surface)',
+              }} />
+          )}
+        </div>
         <div>
           <p className="text-sm font-semibold" style={{ color: 'var(--sat-text)' }}>{user.nickname || '—'}</p>
-          {user.bio
-            ? <p className="text-xs truncate max-w-[180px]" style={{ color: 'var(--sat-muted)' }}>{user.bio}</p>
-            : sub && <p className="text-xs" style={{ color: 'var(--sat-muted)' }}>{sub}</p>
+          {sub
+            ? <p className="text-xs" style={{ color: subColor ?? 'var(--sat-muted)' }}>{sub}</p>
+            : user.bio && <p className="text-xs truncate max-w-[180px]" style={{ color: 'var(--sat-muted)' }}>{user.bio}</p>
           }
         </div>
       </div>
@@ -57,6 +69,18 @@ export default function FriendsPage() {
   const [loadingSearch, setLoadingSearch] = useState(false);
   const [sentRequests, setSentRequests] = useState<Set<string>>(new Set());
   const [error, setError] = useState('');
+
+  // Présence temps réel (pastille + « Vu à… »)
+  const onlineIds = usePresenceStore((s) => s.onlineUserIds);
+  const lastSeenById = usePresenceStore((s) => s.lastSeenById);
+  const presenceOf = (f: FriendUser) => {
+    const online = onlineIds.has(f.id);
+    return {
+      online,
+      label: online ? 'En ligne' : formatLastSeen(lastSeenById[f.id] ?? f.lastSeenAt) ?? 'Hors ligne',
+      color: online ? 'var(--sat-online)' : 'var(--sat-muted)',
+    };
+  };
 
   useEffect(() => {
     authClient.getSession().then(({ data }) => { if (data?.user) setCurrentUser(data.user); }).catch(() => {});
@@ -206,6 +230,9 @@ export default function FriendsPage() {
               )}
               {friends.map((f) => (
                 <UserCard key={f.id} user={f}
+                  online={presenceOf(f).online}
+                  sub={presenceOf(f).label}
+                  subColor={presenceOf(f).color}
                   right={
                     <div className="flex items-center gap-2">
                       <button onClick={() => handleOpenDm(f.id)}

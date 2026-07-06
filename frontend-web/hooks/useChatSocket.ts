@@ -40,8 +40,8 @@ export function useChatSocket() {
           setOnline(userId);
         });
 
-        socketSingleton.on('user_offline', ({ userId }: { userId: string }) => {
-          setOffline(userId);
+        socketSingleton.on('user_offline', ({ userId, lastSeenAt }: { userId: string; lastSeenAt?: string }) => {
+          setOffline(userId, lastSeenAt);
         });
 
         socketSingleton.on('notification', (data: any) => {

@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { useChatStore } from '@/store/chatStore';
-import { usePresenceStore } from '@/store/presenceStore';
+import { usePresenceStore, formatLastSeen } from '@/store/presenceStore';
 import { useChatSocket } from '@/hooks/useChatSocket';
 import { api } from '@/lib/api';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -112,7 +112,10 @@ function ChatPageContent() {
     conversations, messagesByConversationId, paginationByConversationId, currentConversationId, unreadCounts,
     setConversations, setCurrentConversationId, setMessages, prependMessages,
   } = useChatStore();
-  const isOnline = usePresenceStore((s) => s.isOnline);
+  // Abonnement aux DONNÉES de présence (pas aux getters) → re-render garanti
+  const onlineUserIds = usePresenceStore((s) => s.onlineUserIds);
+  const lastSeenById = usePresenceStore((s) => s.lastSeenById);
+  const isOnline = (userId: string) => onlineUserIds.has(userId);
   const socket = useChatSocket();
 
   const [newMessage, setNewMessage] = useState('');
@@ -497,9 +500,11 @@ function ChatPageContent() {
           const ext = mr.mimeType?.includes('mp4') ? 'mp4' : mr.mimeType?.includes('ogg') ? 'ogg' : 'webm';
           fd.append('file', blob, `voice-${Date.now()}.${ext}`);
           const res = await api.post('/upload', fd);
+          // Pas de texte : le lecteur audio EST le message (l'aperçu de la
+          // sidebar dérive « Message vocal » du type de fichier)
           socket.emit('send_message', {
             conversationId: currentConversationId,
-            content: 'Message vocal',
+            content: '',
             fileUrl: res.data.url,
             fileName: res.data.name,
             fileType: res.data.type,
@@ -742,10 +747,12 @@ function ChatPageContent() {
                         title={currentConv.type === 'DM' ? 'Infos du contact' : 'Infos du groupe'}>
                         {getTitle(currentConv)}
                       </button>
-                      <span className="text-xs" style={{ color: 'var(--sat-faint)' }}>
+                      <span className="text-xs" style={{ color: online ? 'var(--sat-online)' : 'var(--sat-faint)' }}>
                         {currentConv.type === 'GROUP'
                           ? `— ${currentConv.participants.length} membres`
-                          : online ? '— En ligne' : '— Hors ligne'}
+                          : online
+                            ? '— En ligne'
+                            : `— ${formatLastSeen(lastSeenById[otherUser?.id ?? ''] ?? (otherUser as any)?.lastSeenAt) ?? 'Hors ligne'}`}
                       </span>
                     </div>
 
@@ -933,8 +940,9 @@ function ChatPageContent() {
                         ) : msg.fileUrl ? (
                           <div className={cx('flex flex-col gap-1', isMe ? 'items-end' : 'items-start')}>
                             <FilePreview url={msg.fileUrl} name={msg.fileName} type={msg.fileType} mine={isMe} />
-                            {/* Légende sous le média (façon WhatsApp) */}
-                            {msg.content && !msg.content.startsWith('🎤') && (
+                            {/* Légende sous le média (façon WhatsApp) — jamais pour un vocal :
+                                le lecteur audio EST le message */}
+                            {msg.content && !msg.fileType?.startsWith('audio/') && (
                               <div className="px-3 py-1.5 text-sm leading-relaxed break-words rounded-2xl max-w-[240px]"
                                 style={{
                                   background: isMe

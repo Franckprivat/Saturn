@@ -95,10 +95,10 @@ export class FriendsService {
       },
       include: {
         requester: {
-          select: { id: true, nickname: true, image: true, avatarColor: true },
+          select: { id: true, nickname: true, image: true, avatarColor: true, lastSeenAt: true },
         },
         addressee: {
-          select: { id: true, nickname: true, image: true, avatarColor: true },
+          select: { id: true, nickname: true, image: true, avatarColor: true, lastSeenAt: true },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -116,10 +116,10 @@ export class FriendsService {
       },
       include: {
         requester: {
-          select: { id: true, nickname: true, image: true, avatarColor: true },
+          select: { id: true, nickname: true, image: true, avatarColor: true, lastSeenAt: true },
         },
         addressee: {
-          select: { id: true, nickname: true, image: true, avatarColor: true },
+          select: { id: true, nickname: true, image: true, avatarColor: true, lastSeenAt: true },
         },
       },
     });

@@ -229,7 +229,8 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
                 ) : msg.fileUrl ? (
                   <div className="py-1 space-y-1">
                     <FilePreview url={msg.fileUrl} name={msg.fileName || ''} type={msg.fileType || ''} maxWidth={260} />
-                    {msg.content && !msg.content.startsWith('🎤') && (
+                    {/* Jamais de légende pour un vocal : le lecteur EST le message */}
+                    {msg.content && !msg.fileType?.startsWith('audio/') && (
                       <p className="text-sm leading-relaxed break-words" style={{ color: 'var(--sat-text)' }}>{msg.content}</p>
                     )}
                   </div>

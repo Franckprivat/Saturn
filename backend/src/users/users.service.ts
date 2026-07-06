@@ -52,6 +52,7 @@ export class UsersService {
         socialLinks: true,
         avatarColor: true,
         image: true,
+        lastSeenAt: true,
         createdAt: true,
       },
     });

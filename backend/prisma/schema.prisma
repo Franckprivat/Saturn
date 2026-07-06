@@ -22,6 +22,8 @@ model User {
   socialLinks   Json?
   avatarColor   String?
   chatWallpaper String?
+  /// Dernière déconnexion — affiché « Vu à HH:MM » quand l'utilisateur est hors ligne
+  lastSeenAt    DateTime?
 
   sessions      Session[]
   accounts      Account[]

@@ -5,6 +5,7 @@ import type { Socket } from 'socket.io-client';
 import { api } from '@/lib/api';
 import { useChatStore } from '@/store/chatStore';
 import { useBadgeStore } from '@/store/badgeStore';
+import { usePresenceStore } from '@/store/presenceStore';
 
 /**
  * Pont global socket → store, monté une seule fois dans AppShell.
@@ -37,6 +38,12 @@ export function useGlobalChatEvents(socket: Socket | null) {
         const res = await api.get('/conversations');
         store().setConversations(res.data);
         joinAll(res.data.map((c: any) => c.id));
+        // « Vu à… » initial de chaque contact (le live arrive ensuite par socket)
+        for (const c of res.data) {
+          for (const p of c.participants ?? []) {
+            usePresenceStore.getState().seedLastSeen(p.user?.id, p.user?.lastSeenAt);
+          }
+        }
         // Rattrapage « distribué » : les messages reçus pendant qu'on était
         // hors ligne sont maintenant arrivés sur cet appareil.
         for (const c of res.data) {
