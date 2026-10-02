@@ -31,10 +31,15 @@ It combines the **1-to-1 / group messaging** of WhatsApp with the **server / cha
 
 ## Screenshots
 
-<!-- TODO: ajouter les captures dans docs/ (chat.png, communities.png, call.png, profile.png). -->
-
 | Real-time chat | Communities |
 |:---:|:---:|
+| ![Direct messages with reactions and read receipts](docs/chat.png) | ![Community with text and voice channels and member roles](docs/communities.png) |
+| **Profile & QR code** | |
+| ![Profile with bio and shareable QR code](docs/profile.png) | |
+
+<!-- TODO: ajouter docs/call.png (appel vidéo) -->
+
+---:|:---:|
 | ![Chat](docs/chat.png) | ![Communities](docs/communities.png) |
 | **Video call** | **Profile & themes** |
 | ![Call](docs/call.png) | ![Profile](docs/profile.png) |
