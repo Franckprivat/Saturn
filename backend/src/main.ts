@@ -49,11 +49,8 @@ async function bootstrap() {
   );
 
   // ── Better-auth avant NestJS et avant body parser ─────────────────────────
-  //    /auth     → via Nginx (strip /api/ → /auth/...)
-  //    /api/auth → accès direct local (npm run dev)
-  const authHandler = toNodeHandler(auth);
-  expressApp.use('/auth', authHandler);
-  expressApp.use('/api/auth', authHandler);
+  //    /api/auth → en local (npm run dev) comme via Nginx, qui conserve le chemin
+  expressApp.use('/api/auth', toNodeHandler(auth));
 
   // ── Body parser pour les routes NestJS ────────────────────────────────────
   expressApp.use(express.json({ limit: '6mb' }));
