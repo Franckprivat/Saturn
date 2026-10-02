@@ -35,7 +35,7 @@ function PhotoCard({
 }
 
 /* ── Mockup téléphone (style messagerie, écran clair) ── */
-function PhoneMockup() {
+export function PhoneMockup() {
   const messages = [
     { text: 'Le brunch était incroyable ! 🥐', own: false },
     { text: 'Carrément 🔥', own: true },

@@ -15,7 +15,8 @@ import { useGlobalChatEvents } from '@/hooks/useGlobalChatEvents';
 import { useBadgeStore } from '@/store/badgeStore';
 import { mediaUrl } from '@/lib/media';
 
-const AUTH_ROUTES = ['/login', '/signup', '/forgot-password', '/reset-password'];
+// Pages affichées sans la barre de navigation de l'app (accueil + authentification)
+const AUTH_ROUTES = ['/', '/login', '/signup', '/forgot-password', '/reset-password'];
 
 function NavIcon({
   href,
@@ -295,7 +296,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         style={{ width: 72, background: 'var(--sat-sidebar)', borderRight: '1px solid var(--sat-border)' }}
       >
         {/* Logo Saturn */}
-        <Link href="/" title="Saturn" className="group flex items-center justify-center mb-1">
+        <Link href="/chat" title="Saturn" className="group flex items-center justify-center mb-1">
           <SaturnLogo size={64} tone="auto" glow className="transition-transform duration-200 group-hover:scale-105" />
         </Link>
 
