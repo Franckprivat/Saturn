@@ -39,11 +39,6 @@ It combines the **1-to-1 / group messaging** of WhatsApp with the **server / cha
 
 <!-- TODO: ajouter docs/call.png (appel vidéo) -->
 
----:|:---:|
-| ![Chat](docs/chat.png) | ![Communities](docs/communities.png) |
-| **Video call** | **Profile & themes** |
-| ![Call](docs/call.png) | ![Profile](docs/profile.png) |
-
 ---
 
 ## Features
