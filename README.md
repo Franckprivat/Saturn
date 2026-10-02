@@ -13,7 +13,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
-<!-- TODO: ajouter **[Live demo](URL)** quand la démo sera hébergée --> **[Screenshots](#screenshots)** · **[Source](https://github.com/Franckprivat/Saturn)**
+**[Screenshots](#screenshots)** · **[Source](https://github.com/Franckprivat/Saturn)**
 
 </div>
 
