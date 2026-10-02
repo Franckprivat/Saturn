@@ -59,7 +59,7 @@ export default function SignupPage() {
     try {
       await api.patch('/users/me', { image: image || null, avatarColor: image ? null : color });
     } catch { /* non bloquant */ }
-    router.push('/');
+    router.push('/chat');
   };
 
   return (

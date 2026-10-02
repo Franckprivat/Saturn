@@ -2,6 +2,12 @@ import 'dotenv/config';
 import { betterAuth } from 'better-auth';
 import { Pool } from 'pg';
 import * as nodemailer from 'nodemailer';
+import {
+  APIError,
+  createAuthMiddleware,
+  getSessionFromCtx,
+} from 'better-auth/api';
+import { DEMO_LOCKED_AUTH_PATHS, isDemoEmail } from '../demo/demo.config';
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
@@ -60,4 +66,22 @@ export const auth = betterAuth({
   },
   account: { modelName: 'account' },
   verification: { modelName: 'verification' },
+  hooks: {
+    // Compte démo partagé : personne ne doit pouvoir en changer l'accès.
+    before: createAuthMiddleware(async (ctx) => {
+      let email: unknown;
+      if (ctx.path === '/request-password-reset') {
+        email = (ctx.body as { email?: unknown } | undefined)?.email;
+      } else if (DEMO_LOCKED_AUTH_PATHS.includes(ctx.path)) {
+        email = (await getSessionFromCtx(ctx))?.user.email;
+      }
+      if (isDemoEmail(email)) {
+        // APIError hérite bien d'Error, mais son typage (better-call) est opaque pour le linter
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw new APIError('FORBIDDEN', {
+          message: 'Action désactivée pour le compte démo',
+        });
+      }
+    }),
+  },
 });
