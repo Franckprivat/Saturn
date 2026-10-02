@@ -1,6 +1,17 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import { getSessionUser } from '../auth/get-session-user';
+import type { Request } from 'express';
 
 @Controller('conversations/:conversationId/messages')
 export class MessagesController {
@@ -8,7 +19,7 @@ export class MessagesController {
 
   @Get()
   async getMessages(
-    @Req() req: any,
+    @Req() req: Request,
     @Param('conversationId') conversationId: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
@@ -24,23 +35,30 @@ export class MessagesController {
 
   @Get('search')
   async searchMessages(
-    @Req() req: any,
+    @Req() req: Request,
     @Param('conversationId') conversationId: string,
     @Query('q') q: string,
   ) {
     const user = await getSessionUser(req);
-    return this.messagesService.searchMessages(conversationId, user.id, q || '');
+    return this.messagesService.searchMessages(
+      conversationId,
+      user.id,
+      q || '',
+    );
   }
 
   @Get('pinned')
-  async getPinned(@Req() req: any, @Param('conversationId') conversationId: string) {
+  async getPinned(
+    @Req() req: Request,
+    @Param('conversationId') conversationId: string,
+  ) {
     const user = await getSessionUser(req);
     return this.messagesService.getPinnedMessages(conversationId, user.id);
   }
 
   @Post()
   async sendMessage(
-    @Req() req: any,
+    @Req() req: Request,
     @Param('conversationId') conversationId: string,
     @Body('content') content: string,
     @Body('fileUrl') fileUrl?: string,
@@ -48,19 +66,33 @@ export class MessagesController {
     @Body('fileType') fileType?: string,
   ) {
     const user = await getSessionUser(req);
-    const file = fileUrl ? { fileUrl, fileName: fileName || 'fichier', fileType: fileType || 'application/octet-stream' } : undefined;
-    return this.messagesService.createMessage(user.id, conversationId, content || '', file);
+    const file = fileUrl
+      ? {
+          fileUrl,
+          fileName: fileName || 'fichier',
+          fileType: fileType || 'application/octet-stream',
+        }
+      : undefined;
+    return this.messagesService.createMessage(
+      user.id,
+      conversationId,
+      content || '',
+      file,
+    );
   }
 
   @Post('read')
-  async markRead(@Req() req: any, @Param('conversationId') conversationId: string) {
+  async markRead(
+    @Req() req: Request,
+    @Param('conversationId') conversationId: string,
+  ) {
     const user = await getSessionUser(req);
     return this.messagesService.markAsRead(conversationId, user.id);
   }
 
   @Post(':messageId/pin')
   async pin(
-    @Req() req: any,
+    @Req() req: Request,
     @Param('conversationId') conversationId: string,
     @Param('messageId') messageId: string,
   ) {
@@ -70,17 +102,21 @@ export class MessagesController {
 
   @Delete(':messageId/pin')
   async unpin(
-    @Req() req: any,
+    @Req() req: Request,
     @Param('conversationId') conversationId: string,
     @Param('messageId') messageId: string,
   ) {
     const user = await getSessionUser(req);
-    return this.messagesService.unpinMessage(conversationId, messageId, user.id);
+    return this.messagesService.unpinMessage(
+      conversationId,
+      messageId,
+      user.id,
+    );
   }
 
   @Patch(':messageId')
   async editMessage(
-    @Req() req: any,
+    @Req() req: Request,
     @Param('messageId') messageId: string,
     @Body('content') content: string,
   ) {

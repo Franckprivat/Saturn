@@ -14,15 +14,17 @@ const transporter = nodemailer.createTransport({
 });
 
 export const auth = betterAuth({
-  database: new Pool({ connectionString: process.env.BETTER_AUTH_DATABASE_URL }),
+  database: new Pool({
+    connectionString: process.env.BETTER_AUTH_DATABASE_URL,
+  }),
   secret: process.env.BETTER_AUTH_SECRET,
   trustedOrigins: process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
     : ['http://localhost:3000'],
   session: {
     modelName: 'session',
-    expiresIn: 60 * 60 * 24 * 7,           // 7 jours
-    updateAge: 60 * 60 * 24,               // renouvelle si > 1 jour restant
+    expiresIn: 60 * 60 * 24 * 7, // 7 jours
+    updateAge: 60 * 60 * 24, // renouvelle si > 1 jour restant
     cookieCache: { enabled: true, maxAge: 60 * 5 },
   },
   emailAndPassword: {
