@@ -14,21 +14,29 @@ const transporter = nodemailer.createTransport({
 });
 
 export const auth = betterAuth({
-  database: new Pool({ connectionString: process.env.BETTER_AUTH_DATABASE_URL }),
+  database: new Pool({
+    connectionString: process.env.BETTER_AUTH_DATABASE_URL,
+  }),
   secret: process.env.BETTER_AUTH_SECRET,
   trustedOrigins: process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
     : ['http://localhost:3000'],
   session: {
     modelName: 'session',
-    expiresIn: 60 * 60 * 24 * 7,           // 7 jours
-    updateAge: 60 * 60 * 24,               // renouvelle si > 1 jour restant
+    expiresIn: 60 * 60 * 24 * 7, // 7 jours
+    updateAge: 60 * 60 * 24, // renouvelle si > 1 jour restant
     cookieCache: { enabled: true, maxAge: 60 * 5 },
   },
   emailAndPassword: {
     enabled: true,
     sendResetPassword: async ({ user, url }) => {
-      if (!process.env.SMTP_USER) return; // email non configuré, on skip silencieusement
+      if (!process.env.SMTP_USER) {
+        // Sans SMTP, aucun e-mail ne part : le signaler dans les logs
+        console.warn(
+          `[auth] Reset de mot de passe demandé pour ${user.id} mais SMTP_USER n'est pas configuré`,
+        );
+        return;
+      }
       await transporter.sendMail({
         from: `"Saturn" <${process.env.SMTP_USER}>`,
         to: user.email,
@@ -48,6 +56,19 @@ export const auth = betterAuth({
     },
   },
   baseURL: process.env.BETTER_AUTH_URL || 'http://localhost:3001',
+  // Les routes better-auth sont montées avant NestJS et échappent au ThrottlerGuard :
+  // rate limit natif toujours actif (par défaut seulement si NODE_ENV=production).
+  // Les routes sensibles (/sign-in, /sign-up, /forget-password…) ont des règles
+  // plus strictes intégrées à better-auth.
+  rateLimit: {
+    enabled: true,
+    window: 60,
+    max: 100,
+  },
+  advanced: {
+    // X-Real-IP est posé par Nginx (non falsifiable par le client derrière le proxy)
+    ipAddress: { ipAddressHeaders: ['x-real-ip', 'x-forwarded-for'] },
+  },
   user: {
     modelName: 'user',
     additionalFields: {
@@ -57,5 +78,25 @@ export const auth = betterAuth({
     },
   },
   account: { modelName: 'account' },
+  databaseHooks: {
+    user: {
+      create: {
+        // Le pseudo sert de nom affiché partout (l'e-mail n'est plus exposé
+        // aux autres utilisateurs) : on garantit qu'il est toujours rempli.
+        before: (user) => {
+          const nickname = (user as { nickname?: string | null }).nickname;
+          return Promise.resolve({
+            data: {
+              ...user,
+              nickname:
+                nickname?.trim() ||
+                user.name?.trim() ||
+                user.email.split('@')[0],
+            },
+          });
+        },
+      },
+    },
+  },
   verification: { modelName: 'verification' },
 });

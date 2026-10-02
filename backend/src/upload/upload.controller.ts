@@ -8,11 +8,14 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage, memoryStorage } from 'multer';
-import { extname, join } from 'path';
+import { memoryStorage } from 'multer';
+import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
+import { writeFile } from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { getSessionUser } from '../auth/get-session-user';
+import type { Request } from 'express';
+import { ALLOWED_TYPES, baseMime, matchesSignature } from './file-types';
 
 const USE_R2 = !!(
   process.env.R2_ACCOUNT_ID &&
@@ -24,17 +27,24 @@ const USE_R2 = !!(
 
 // Disk fallback (dev without R2)
 const UPLOAD_DIR = join(process.cwd(), 'uploads');
-if (!USE_R2 && !existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
+if (!USE_R2 && !existsSync(UPLOAD_DIR))
+  mkdirSync(UPLOAD_DIR, { recursive: true });
 
-const storageConfig = USE_R2
-  ? memoryStorage()
-  : diskStorage({
-      destination: UPLOAD_DIR,
-      filename: (_req, file, cb) => {
-        const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-        cb(null, `${unique}${extname(file.originalname)}`);
+let s3Client: import('@aws-sdk/client-s3').S3Client | null = null;
+async function getS3() {
+  if (!s3Client) {
+    const { S3Client } = await import('@aws-sdk/client-s3');
+    s3Client = new S3Client({
+      region: 'auto',
+      endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
       },
     });
+  }
+  return s3Client;
+}
 
 @Controller('upload')
 export class UploadController {
@@ -42,42 +52,49 @@ export class UploadController {
   @Throttle({ global: { ttl: 60_000, limit: 10 } })
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: storageConfig,
+      // Mémoire : la signature du fichier est vérifiée avant toute écriture
+      storage: memoryStorage(),
       limits: { fileSize: 50 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
-        const allowed = /image\/(jpeg|png|gif|webp)|video\/(mp4|webm)|audio\/(webm|ogg|mpeg|mp4)|application\/pdf|text\//;
-        if (allowed.test(file.mimetype)) cb(null, true);
+        if (ALLOWED_TYPES[baseMime(file.mimetype)]) cb(null, true);
         else cb(new BadRequestException('Type de fichier non supporté'), false);
       },
     }),
   )
-  async uploadFile(@Req() req: any, @UploadedFile() file: Express.Multer.File) {
+  async uploadFile(
+    @Req() req: Request,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
     await getSessionUser(req);
     if (!file) throw new BadRequestException('Aucun fichier reçu');
 
+    const mime = baseMime(file.mimetype);
+    const ext = ALLOWED_TYPES[mime];
+    // Le type MIME vient du client : on vérifie le contenu réel du fichier
+    if (!ext || !matchesSignature(mime, file.buffer.subarray(0, 512))) {
+      throw new BadRequestException(
+        'Le contenu du fichier ne correspond pas à son type',
+      );
+    }
+    // Nom imposé par le serveur : jamais l'extension d'origine
+    const filename = `${randomUUID()}${ext}`;
+
     if (USE_R2) {
-      const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3');
-      const s3 = new S3Client({
-        region: 'auto',
-        endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-        credentials: {
-          accessKeyId: process.env.R2_ACCESS_KEY_ID!,
-          secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
-        },
-      });
-      const key = `uploads/${randomUUID()}${extname(file.originalname)}`;
+      const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+      const key = `uploads/${filename}`;
+      const s3 = await getS3();
       await s3.send(
         new PutObjectCommand({
           Bucket: process.env.R2_BUCKET_NAME!,
           Key: key,
           Body: file.buffer,
-          ContentType: file.mimetype,
+          ContentType: mime,
         }),
       );
       return {
         url: `${process.env.R2_PUBLIC_URL}/${key}`,
         name: file.originalname,
-        type: file.mimetype,
+        type: mime,
         size: file.size,
       };
     }
@@ -85,10 +102,11 @@ export class UploadController {
     // Stockage disque : URL RELATIVE. Le client la résout vers l'origine API
     // courante (lib/media.ts) — les fichiers restent valides quel que soit
     // l'environnement (dev direct :3001, Docker/nginx :80, domaine déployé).
+    await writeFile(join(UPLOAD_DIR, filename), file.buffer);
     return {
-      url: `/uploads/${file.filename}`,
+      url: `/uploads/${filename}`,
       name: file.originalname,
-      type: file.mimetype,
+      type: mime,
       size: file.size,
     };
   }

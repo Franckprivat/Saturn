@@ -6,6 +6,7 @@ export interface ChatUser {
   nickname: string;
   image?: string | null;
   avatarColor?: string | null;
+  lastSeenAt?: string | null;
 }
 
 export interface MessageReaction {
@@ -28,6 +29,7 @@ export interface ChatMessage {
   isWhisper?: boolean;
   whisperTo?: string[];
   type?: 'MESSAGE' | 'SYSTEM' | 'INVITE';
+  metadata?: Record<string, unknown> | null;
   deletedAt?: string | null;
   replyToId?: string | null;
   replyTo?: ChatMessage | null;
@@ -47,6 +49,7 @@ export interface Conversation {
   createdAt: string;
   type: 'DM' | 'GROUP';
   name?: string | null;
+  image?: string | null;
   participants: ConversationParticipant[];
   messages?: ChatMessage[];
 }

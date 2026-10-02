@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { mediaUrl } from '@/lib/media';
 import { authClient } from '@/lib/auth-client';
 import { Spinner } from '@/components/Spinner';
+import { apiErrorMessage } from '@/lib/errors';
 
 type Step =
   | 'loading'      // vérification session + aperçu
@@ -22,13 +23,28 @@ const STATE_MESSAGES: Record<string, string> = {
   not_found: 'Ce lien d\'invitation n\'existe pas ou a été supprimé.',
 };
 
+interface LinkPreview {
+  state: string;
+  banned?: boolean;
+  alreadyMember?: boolean;
+  requestPending?: boolean;
+  joinPolicy?: 'OPEN' | 'APPROVAL';
+  community?: {
+    id: string;
+    name: string;
+    description?: string | null;
+    image?: string | null;
+    memberCount: number;
+  };
+}
+
 export default function JoinCommunityPage() {
   const params = useParams();
   const router = useRouter();
   const token = params?.token as string;
 
   const [step, setStep] = useState<Step>('loading');
-  const [preview, setPreview] = useState<any>(null);
+  const [preview, setPreview] = useState<LinkPreview | null>(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
@@ -37,13 +53,13 @@ export default function JoinCommunityPage() {
     authClient.getSession().then(async ({ data }) => {
       if (!data?.user) { router.push(`/login?redirect=/communities/join/${token}`); return; }
       try {
-        const res = await api.get(`/community-invitations/link/${token}`);
+        const res = await api.get<LinkPreview>(`/community-invitations/link/${token}`);
         const p = res.data;
         setPreview(p);
         if (p.state === 'not_found' || p.banned) {
           setError(p.banned ? 'Tu as été banni de cette communauté.' : STATE_MESSAGES.not_found);
           setStep('invalid');
-        } else if (p.alreadyMember) {
+        } else if (p.alreadyMember && p.community) {
           router.push(`/communities/${p.community.id}`);
         } else if (p.state !== 'active') {
           setError(STATE_MESSAGES[p.state] ?? 'Lien invalide.');
@@ -72,8 +88,8 @@ export default function JoinCommunityPage() {
         setStep('success');
         setTimeout(() => router.push(`/communities/${res.data.id}`), 1400);
       }
-    } catch (e: any) {
-      setError(e?.response?.data?.message || 'Lien invalide ou expiré.');
+    } catch (e) {
+      setError(apiErrorMessage(e, 'Lien invalide ou expiré.'));
       setStep('invalid');
     }
   };

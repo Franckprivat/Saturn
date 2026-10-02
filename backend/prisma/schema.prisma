@@ -115,6 +115,9 @@ model ConversationParticipant {
   conversation   Conversation      @relation(fields: [conversationId], references: [id])
   conversationId String
   role           GroupRole         @default(MEMBER)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
 }
 
 model Message {
@@ -141,6 +144,8 @@ model Message {
   readBy         ReadReceipt[]
   deliveredTo    DeliveryReceipt[]
   pinnedIn       PinnedMessage[]
+
+  @@index([conversationId, createdAt])
 }
 
 model MessageReaction {

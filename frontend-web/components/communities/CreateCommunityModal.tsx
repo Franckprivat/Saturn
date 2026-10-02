@@ -116,7 +116,7 @@ export function CreateCommunityModal({ onClose, onCreated }: CreateCommunityModa
           <div className="p-5 space-y-4">
             <div className="w-16 h-16 rounded-2xl mx-auto flex items-center justify-center text-3xl" style={{ background: 'var(--sat-hover)' }}>🔗</div>
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--sat-muted)' }}>Lien ou code d'invitation</label>
+              <label className="text-[11px] font-bold uppercase tracking-wide" style={{ color: 'var(--sat-muted)' }}>Lien ou code d&apos;invitation</label>
               <input autoFocus type="text" value={token} onChange={(e) => setToken(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleJoin(); }}
                 placeholder="ex: a1b2c3d4 ou un lien complet"
