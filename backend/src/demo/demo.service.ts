@@ -156,6 +156,22 @@ export class DemoService implements OnApplicationBootstrap {
     ]);
 
     await this.ensureCommunity(demoId);
+
+    // Quelques réactions pour montrer la fonctionnalité
+    const reactions: [messageId: string, userId: string, emoji: string][] = [
+      ['demo-dm-lea-m3', 'demo-lea', '🔥'],
+      ['demo-dm-lea-m0', demoId, '❤️'],
+      ['demo-group-m0', 'demo-karim', '👋'],
+      ['demo-group-m0', demoId, '🎉'],
+      ['demo-group-m4', 'demo-lea', '👍'],
+    ];
+    for (const [messageId, userId, emoji] of reactions) {
+      await this.prisma.messageReaction.upsert({
+        where: { messageId_userId: { messageId, userId } },
+        update: { emoji },
+        create: { messageId, userId, emoji },
+      });
+    }
   }
 
   private async ensureDemoUser(): Promise<string> {
