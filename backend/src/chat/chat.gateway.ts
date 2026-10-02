@@ -9,7 +9,13 @@ import {
 } from '@nestjs/websockets';
 import { PrismaService } from '../prisma/prisma.service';
 import { MessagesService } from '../messages/messages.service';
-import { BadRequestException, ForbiddenException, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { auth } from '../auth/better-auth.instance';
 
@@ -32,7 +38,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(ChatGateway.name);
   private onlineUsers = new Map<string, number>();
   // Salons vocaux : channelId -> { communityId, peers: socketId -> userId }
-  private voiceRooms = new Map<string, { communityId: string; peers: Map<string, string> }>();
+  private voiceRooms = new Map<
+    string,
+    { communityId: string; peers: Map<string, string> }
+  >();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -43,7 +52,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private broadcastVoiceState(channelId: string, communityId: string) {
     const room = this.voiceRooms.get(channelId);
     const users = room ? Array.from(new Set(room.peers.values())) : [];
-    this.server.to(`community:${communityId}`).emit('voice_state', { channelId, users });
+    this.server
+      .to(`community:${communityId}`)
+      .emit('voice_state', { channelId, users });
   }
 
   private leaveAllVoiceRooms(client: AuthedSocket) {
@@ -51,7 +62,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       if (room.peers.has(client.id)) {
         const userId = room.peers.get(client.id);
         room.peers.delete(client.id);
-        client.to(`voice:${channelId}`).emit('voice_peer_left', { channelId, socketId: client.id, userId });
+        client
+          .to(`voice:${channelId}`)
+          .emit('voice_peer_left', { channelId, socketId: client.id, userId });
         if (room.peers.size === 0) this.voiceRooms.delete(channelId);
         this.broadcastVoiceState(channelId, room.communityId);
       }
@@ -71,19 +84,28 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const session = await auth.api.getSession({
         headers: new Headers({ cookie: cookieHeader }),
       });
-      if (!session?.user) { client.disconnect(); return; }
+      if (!session?.user) {
+        client.disconnect();
+        return;
+      }
 
       client.user = { id: session.user.id, email: session.user.email };
       // Salle personnelle pour les notifications ciblées
       await client.join(`user:${session.user.id}`);
       const prev = this.onlineUsers.get(session.user.id) ?? 0;
       this.onlineUsers.set(session.user.id, prev + 1);
-      if (prev === 0) this.server.emit('user_online', { userId: session.user.id });
-      client.emit('online_users', { userIds: Array.from(this.onlineUsers.keys()) });
+      if (prev === 0)
+        this.server.emit('user_online', { userId: session.user.id });
+      client.emit('online_users', {
+        userIds: Array.from(this.onlineUsers.keys()),
+      });
       // Plancher de « vu à… » dès la connexion : si le serveur meurt brutalement
       // (pas de handleDisconnect), le dernier passage reste au moins daté d'ici.
       this.prisma.user
-        .update({ where: { id: session.user.id }, data: { lastSeenAt: new Date() } })
+        .update({
+          where: { id: session.user.id },
+          data: { lastSeenAt: new Date() },
+        })
         .catch(() => {});
       this.logger.log(`Connected: ${session.user.id}`);
     } catch {
@@ -103,14 +125,25 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.prisma.user
         .update({ where: { id: userId }, data: { lastSeenAt } })
         .catch(() => {});
-      this.server.emit('user_offline', { userId, lastSeenAt: lastSeenAt.toISOString() });
+      this.server.emit('user_offline', {
+        userId,
+        lastSeenAt: lastSeenAt.toISOString(),
+      });
     } else {
       this.onlineUsers.set(userId, count);
     }
   }
 
-  async emitSystemMessage(conversationId: string, senderId: string, content: string) {
-    const msg = await this.messagesService.createSystemMessage(senderId, conversationId, content);
+  async emitSystemMessage(
+    conversationId: string,
+    senderId: string,
+    content: string,
+  ) {
+    const msg = await this.messagesService.createSystemMessage(
+      senderId,
+      conversationId,
+      content,
+    );
     this.server.to(conversationId).emit('new_message', msg);
     return msg;
   }
@@ -141,7 +174,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('typing_start')
-  async handleTypingStart(
+  handleTypingStart(
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { conversationId: string },
   ) {
@@ -153,7 +186,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('typing_stop')
-  async handleTypingStop(
+  handleTypingStop(
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { conversationId: string },
   ) {
@@ -167,7 +200,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('send_message')
   async handleSendMessage(
     @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() data: {
+    @MessageBody()
+    data: {
       conversationId: string;
       content?: string;
       fileUrl?: string;
@@ -180,11 +214,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!client.user) throw new UnauthorizedException();
 
     const content = (data.content ?? '').trim();
-    if (!content && !data.fileUrl) throw new BadRequestException('Message vide');
-    if (content.length > 4000) throw new BadRequestException('Message trop long (4000 caractères max)');
+    if (!content && !data.fileUrl)
+      throw new BadRequestException('Message vide');
+    if (content.length > 4000)
+      throw new BadRequestException('Message trop long (4000 caractères max)');
 
     const file = data.fileUrl
-      ? { fileUrl: data.fileUrl, fileName: data.fileName || 'fichier', fileType: data.fileType || 'application/octet-stream' }
+      ? {
+          fileUrl: data.fileUrl,
+          fileName: data.fileName || 'fichier',
+          fileType: data.fileType || 'application/octet-stream',
+        }
       : undefined;
 
     const message = await this.messagesService.createMessage(
@@ -200,18 +240,31 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const allowed = new Set([...message.whisperTo, client.user.id]);
       const sockets = await this.server.in(data.conversationId).fetchSockets();
       for (const s of sockets) {
-        const authed = s as any;
-        if (authed.user && allowed.has(authed.user.id)) s.emit('new_message', message);
+        // L'adapter en mémoire renvoie les vraies instances de Socket
+        const authed = s as unknown as AuthedSocket;
+        if (authed.user && allowed.has(authed.user.id))
+          s.emit('new_message', message);
       }
     } else {
       this.server.to(data.conversationId).emit('new_message', message);
     }
 
     // Notification push aux participants absents de la salle
-    const senderName = (message as any).sender?.nickname || client.user.email?.split('@')[0] || 'Quelqu\'un';
-    const preview = message.content ? message.content.substring(0, 80) : '📎 Fichier';
-    const socketsInRoom = await this.server.in(data.conversationId).fetchSockets();
-    const usersInRoom = new Set(socketsInRoom.map((s: any) => s.user?.id).filter(Boolean));
+    const senderName =
+      message.sender?.nickname ||
+      client.user.email?.split('@')[0] ||
+      "Quelqu'un";
+    const preview = message.content
+      ? message.content.substring(0, 80)
+      : '📎 Fichier';
+    const socketsInRoom = await this.server
+      .in(data.conversationId)
+      .fetchSockets();
+    const usersInRoom = new Set(
+      socketsInRoom
+        .map((s) => (s as unknown as AuthedSocket).user?.id)
+        .filter(Boolean),
+    );
 
     const conv = await this.prisma.conversation.findUnique({
       where: { id: data.conversationId },
@@ -226,7 +279,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             body: preview,
             href: `/chat?conversationId=${data.conversationId}`,
             conversationId: data.conversationId,
-            image: (message as any).sender?.image,
+            image: message.sender?.image,
             timestamp: new Date().toISOString(),
           });
         }
@@ -242,7 +295,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { messageId: string; content: string },
   ) {
     if (!client.user) throw new UnauthorizedException();
-    const updated = await this.messagesService.editMessage(data.messageId, client.user.id, data.content);
+    const updated = await this.messagesService.editMessage(
+      data.messageId,
+      client.user.id,
+      data.content,
+    );
     this.server.to(updated.conversationId).emit('message_edited', updated);
     return updated;
   }
@@ -253,7 +310,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { messageId: string },
   ) {
     if (!client.user) throw new UnauthorizedException();
-    const updated = await this.messagesService.deleteMessage(data.messageId, client.user.id);
+    const updated = await this.messagesService.deleteMessage(
+      data.messageId,
+      client.user.id,
+    );
     this.server.to(updated.conversationId).emit('message_deleted', {
       messageId: updated.id,
       conversationId: updated.conversationId,
@@ -267,7 +327,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { messageId: string; emoji: string },
   ) {
     if (!client.user) throw new UnauthorizedException();
-    const result = await this.messagesService.toggleReaction(data.messageId, client.user.id, data.emoji);
+    const result = await this.messagesService.toggleReaction(
+      data.messageId,
+      client.user.id,
+      data.emoji,
+    );
     this.server.to(result.conversationId).emit('reaction_updated', {
       messageId: result.messageId,
       conversationId: result.conversationId,
@@ -297,7 +361,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string },
   ) {
     if (!client.user) return;
-    const { count } = await this.messagesService.markAsDelivered(data.conversationId, client.user.id);
+    const { count } = await this.messagesService.markAsDelivered(
+      data.conversationId,
+      client.user.id,
+    );
     // N'émettre que s'il y a réellement des nouveaux reçus (évite le bruit)
     if (count > 0) {
       client.to(data.conversationId).emit('messages_delivered', {
@@ -311,18 +378,31 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // ── WebRTC Signaling ──────────────────────────────────────────────────────────
 
   /** User IDs des autres participants d'une conversation (pour le routage des appels). */
-  private async otherParticipantIds(conversationId: string, excludeUserId: string): Promise<string[]> {
+  private async otherParticipantIds(
+    conversationId: string,
+    excludeUserId: string,
+  ): Promise<string[]> {
     const conv = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
       include: { participants: { select: { userId: true } } },
     });
     if (!conv) return [];
-    return conv.participants.map((p) => p.userId).filter((id) => id !== excludeUserId);
+    return conv.participants
+      .map((p) => p.userId)
+      .filter((id) => id !== excludeUserId);
   }
 
   /** Relaye un évènement d'appel à la salle personnelle de chaque autre participant. */
-  private async relayCall(conversationId: string, excludeUserId: string, event: string, payload: any) {
-    const targets = await this.otherParticipantIds(conversationId, excludeUserId);
+  private async relayCall(
+    conversationId: string,
+    excludeUserId: string,
+    event: string,
+    payload: unknown,
+  ) {
+    const targets = await this.otherParticipantIds(
+      conversationId,
+      excludeUserId,
+    );
     for (const userId of targets) {
       this.server.to(`user:${userId}`).emit(event, payload);
     }
@@ -331,7 +411,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('call_offer')
   async handleCallOffer(
     @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() data: { conversationId: string; offer: any; callType: 'audio' | 'video' },
+    @MessageBody()
+    data: {
+      conversationId: string;
+      offer: unknown;
+      callType: 'audio' | 'video';
+    },
   ) {
     if (!client.user) return;
 
@@ -339,7 +424,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       where: { id: client.user.id },
       select: { nickname: true, email: true, image: true },
     });
-    const callerName = caller?.nickname || caller?.email?.split('@')[0] || 'Appel';
+    const callerName =
+      caller?.nickname || caller?.email?.split('@')[0] || 'Appel';
 
     // Sonne globalement via la salle personnelle de chaque destinataire (façon WhatsApp).
     await this.relayCall(data.conversationId, client.user.id, 'call_incoming', {
@@ -355,7 +441,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('call_answer')
   async handleCallAnswer(
     @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() data: { conversationId: string; answer: any },
+    @MessageBody() data: { conversationId: string; answer: unknown },
   ) {
     if (!client.user) return;
     await this.relayCall(data.conversationId, client.user.id, 'call_answered', {
@@ -367,26 +453,36 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('call_ice_candidate')
   async handleIceCandidate(
     @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() data: { conversationId: string; candidate: any },
+    @MessageBody() data: { conversationId: string; candidate: unknown },
   ) {
     if (!client.user) return;
-    await this.relayCall(data.conversationId, client.user.id, 'call_ice_candidate', {
-      from: client.user.id,
-      candidate: data.candidate,
-    });
+    await this.relayCall(
+      data.conversationId,
+      client.user.id,
+      'call_ice_candidate',
+      {
+        from: client.user.id,
+        candidate: data.candidate,
+      },
+    );
   }
 
   /** Renégociation en cours d'appel (reconnexion après coupure réseau — ICE restart). */
   @SubscribeMessage('call_renegotiate')
   async handleCallRenegotiate(
     @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() data: { conversationId: string; offer: any },
+    @MessageBody() data: { conversationId: string; offer: unknown },
   ) {
     if (!client.user) return;
-    await this.relayCall(data.conversationId, client.user.id, 'call_renegotiate', {
-      from: client.user.id,
-      offer: data.offer,
-    });
+    await this.relayCall(
+      data.conversationId,
+      client.user.id,
+      'call_renegotiate',
+      {
+        from: client.user.id,
+        offer: data.offer,
+      },
+    );
   }
 
   @SubscribeMessage('call_end')
@@ -395,7 +491,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string },
   ) {
     if (!client.user) return;
-    await this.relayCall(data.conversationId, client.user.id, 'call_ended', { from: client.user.id });
+    await this.relayCall(data.conversationId, client.user.id, 'call_ended', {
+      from: client.user.id,
+    });
   }
 
   @SubscribeMessage('call_reject')
@@ -404,7 +502,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string },
   ) {
     if (!client.user) return;
-    await this.relayCall(data.conversationId, client.user.id, 'call_rejected', { from: client.user.id });
+    await this.relayCall(data.conversationId, client.user.id, 'call_rejected', {
+      from: client.user.id,
+    });
   }
 
   // ── Communautés : room de présence (état vocal, évènements de communauté) ──
@@ -442,7 +542,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       where: { id: data.channelId },
       select: { communityId: true, type: true },
     });
-    if (!channel || channel.type !== 'VOICE') throw new NotFoundException('Salon vocal introuvable');
+    if (!channel || channel.type !== 'VOICE')
+      throw new NotFoundException('Salon vocal introuvable');
     await this.ensureCommunityMember(channel.communityId, client.user.id);
 
     const roomKey = `voice:${data.channelId}`;
@@ -454,11 +555,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     // Pairs déjà présents (à qui le nouvel arrivant va envoyer une offre)
-    const existingPeers = Array.from(room.peers.entries()).map(([socketId, userId]) => ({ socketId, userId }));
+    const existingPeers = Array.from(room.peers.entries()).map(
+      ([socketId, userId]) => ({ socketId, userId }),
+    );
     room.peers.set(client.id, client.user.id);
 
-    client.emit('voice_existing_peers', { channelId: data.channelId, peers: existingPeers });
-    client.to(roomKey).emit('voice_peer_joined', { channelId: data.channelId, socketId: client.id, userId: client.user.id });
+    client.emit('voice_existing_peers', {
+      channelId: data.channelId,
+      peers: existingPeers,
+    });
+    client.to(roomKey).emit('voice_peer_joined', {
+      channelId: data.channelId,
+      socketId: client.id,
+      userId: client.user.id,
+    });
     this.broadcastVoiceState(data.channelId, channel.communityId);
     return { ok: true };
   }
@@ -472,8 +582,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const room = this.voiceRooms.get(data.channelId);
     if (room?.peers.has(client.id)) {
       room.peers.delete(client.id);
-      client.leave(`voice:${data.channelId}`);
-      client.to(`voice:${data.channelId}`).emit('voice_peer_left', { channelId: data.channelId, socketId: client.id, userId: client.user.id });
+      void client.leave(`voice:${data.channelId}`);
+      client.to(`voice:${data.channelId}`).emit('voice_peer_left', {
+        channelId: data.channelId,
+        socketId: client.id,
+        userId: client.user.id,
+      });
       if (room.peers.size === 0) this.voiceRooms.delete(data.channelId);
       this.broadcastVoiceState(data.channelId, room.communityId);
     }
@@ -482,7 +596,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('voice_signal')
   handleVoiceSignal(
     @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() data: { targetSocketId: string; signal: any },
+    @MessageBody() data: { targetSocketId: string; signal: unknown },
   ) {
     if (!client.user) return;
     this.server.to(data.targetSocketId).emit('voice_signal', {

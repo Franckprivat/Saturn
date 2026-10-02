@@ -1,8 +1,4 @@
-import {
-  ExecutionContext,
-  Injectable,
-  SetMetadata,
-} from '@nestjs/common';
+import { ExecutionContext, Injectable, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 
@@ -21,7 +17,7 @@ export class JwtGuard extends AuthGuard('jwt') {
       context.getClass(),
     ]);
     if (isPublic) {
-    return true;
+      return true;
     }
     return super.canActivate(context);
   }

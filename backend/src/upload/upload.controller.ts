@@ -13,6 +13,7 @@ import { extname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { getSessionUser } from '../auth/get-session-user';
+import type { Request } from 'express';
 
 const USE_R2 = !!(
   process.env.R2_ACCOUNT_ID &&
@@ -24,7 +25,8 @@ const USE_R2 = !!(
 
 // Disk fallback (dev without R2)
 const UPLOAD_DIR = join(process.cwd(), 'uploads');
-if (!USE_R2 && !existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
+if (!USE_R2 && !existsSync(UPLOAD_DIR))
+  mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const storageConfig = USE_R2
   ? memoryStorage()
@@ -45,13 +47,17 @@ export class UploadController {
       storage: storageConfig,
       limits: { fileSize: 50 * 1024 * 1024 },
       fileFilter: (_req, file, cb) => {
-        const allowed = /image\/(jpeg|png|gif|webp)|video\/(mp4|webm)|audio\/(webm|ogg|mpeg|mp4)|application\/pdf|text\//;
+        const allowed =
+          /image\/(jpeg|png|gif|webp)|video\/(mp4|webm)|audio\/(webm|ogg|mpeg|mp4)|application\/pdf|text\//;
         if (allowed.test(file.mimetype)) cb(null, true);
         else cb(new BadRequestException('Type de fichier non supporté'), false);
       },
     }),
   )
-  async uploadFile(@Req() req: any, @UploadedFile() file: Express.Multer.File) {
+  async uploadFile(
+    @Req() req: Request,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
     await getSessionUser(req);
     if (!file) throw new BadRequestException('Aucun fichier reçu');
 

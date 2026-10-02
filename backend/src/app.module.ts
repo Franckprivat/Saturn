@@ -29,9 +29,7 @@ import { CallsModule } from './calls/calls.module';
       },
     }),
     // Rate limiting global : 200 req/min par IP (défaut)
-    ThrottlerModule.forRoot([
-      { name: 'global', ttl: 60_000, limit: 200 },
-    ]),
+    ThrottlerModule.forRoot([{ name: 'global', ttl: 60_000, limit: 200 }]),
     PrismaModule,
     AuthModule,
     UsersModule,

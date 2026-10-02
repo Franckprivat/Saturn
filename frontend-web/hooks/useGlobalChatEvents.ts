@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import type { Socket } from 'socket.io-client';
 import { api } from '@/lib/api';
-import { useChatStore } from '@/store/chatStore';
+import { useChatStore, type ChatMessage, type Conversation, type MessageReaction } from '@/store/chatStore';
 import { useBadgeStore } from '@/store/badgeStore';
 import { usePresenceStore } from '@/store/presenceStore';
 
@@ -35,9 +35,9 @@ export function useGlobalChatEvents(socket: Socket | null) {
 
     const loadConversations = async () => {
       try {
-        const res = await api.get('/conversations');
+        const res = await api.get<Conversation[]>('/conversations');
         store().setConversations(res.data);
-        joinAll(res.data.map((c: any) => c.id));
+        joinAll(res.data.map((c) => c.id));
         // « Vu à… » initial de chaque contact (le live arrive ensuite par socket)
         for (const c of res.data) {
           for (const p of c.participants ?? []) {
@@ -52,7 +52,7 @@ export function useGlobalChatEvents(socket: Socket | null) {
       } catch { /* non connecté ou API indisponible */ }
     };
 
-    const onNewMessage = async (msg: any) => {
+    const onNewMessage = async (msg: ChatMessage) => {
       const { conversations, currentConversationId } = store();
       const known = conversations.some((c) => c.id === msg.conversationId);
 
@@ -78,10 +78,10 @@ export function useGlobalChatEvents(socket: Socket | null) {
       if (inList && !isViewing) store().incrementUnread(msg.conversationId);
     };
 
-    const onEdited = (msg: any) =>
+    const onEdited = (msg: ChatMessage) =>
       store().updateMessage(msg.conversationId, msg.id, { content: msg.content, editedAt: msg.editedAt });
 
-    const onDeleted = ({ messageId, conversationId }: any) =>
+    const onDeleted = ({ messageId, conversationId }: { messageId: string; conversationId: string }) =>
       store().updateMessage(conversationId, messageId, {
         deletedAt: new Date().toISOString(),
         content: '',
@@ -90,14 +90,14 @@ export function useGlobalChatEvents(socket: Socket | null) {
         fileType: null,
       });
 
-    const onReaction = ({ messageId, conversationId, reactions }: any) => {
+    const onReaction = ({ messageId, conversationId, reactions }: { messageId: string; conversationId?: string; reactions: MessageReaction[] }) => {
       if (conversationId) store().updateMessage(conversationId, messageId, { reactions });
     };
 
-    const onRead = ({ conversationId, userId, readAt }: any) =>
+    const onRead = ({ conversationId, userId, readAt }: { conversationId: string; userId: string; readAt: string }) =>
       store().markConversationRead(conversationId, userId, readAt);
 
-    const onDelivered = ({ conversationId, userId, deliveredAt }: any) =>
+    const onDelivered = ({ conversationId, userId, deliveredAt }: { conversationId: string; userId: string; deliveredAt: string }) =>
       store().markConversationDelivered(conversationId, userId, deliveredAt);
 
     // Badges temps réel : demandes d'amis

@@ -10,6 +10,7 @@ import { useVoiceChannel } from '@/hooks/useVoiceChannel';
 import {
   useCommunityStore, canManage, canAdmin, ROLE_LABELS, ROLE_COLORS,
   type CommunityDetail, type Channel, type CommunityRole,
+  type CommunityMemberEntry,
 } from '@/store/communityStore';
 import { Avatar } from '@/components/Avatar';
 import { Spinner, PageLoader } from '@/components/Spinner';
@@ -19,6 +20,9 @@ import { CreateCommunityModal } from '@/components/communities/CreateCommunityMo
 import { InvitePeopleModal } from '@/components/communities/InvitePeopleModal';
 import { CommunityManageModal } from '@/components/communities/CommunityManageModal';
 import { MicIcon, MicOffIcon, PhoneOffIcon, SpeakerIcon } from '@/components/Icons';
+import type { ChatUser } from '@/store/chatStore';
+
+type MemberUser = CommunityMemberEntry['user'];
 
 function dn(u: { nickname?: string | null; email?: string | null } | null | undefined) {
   if (!u) return 'Inconnu';
@@ -33,9 +37,11 @@ export default function CommunityPage() {
   const socket = useChatSocket();
   const { communities, setCommunities } = useCommunityStore();
 
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
   const [detail, setDetail] = useState<CommunityDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Communauté dont le chargement initial est terminé (loading dérivé, pas de setState dans l'effet)
+  const [loadedId, setLoadedId] = useState<string | null>(null);
+  const loading = loadedId !== communityId;
   const [currentChannel, setCurrentChannel] = useState<Channel | null>(null);
   const [showMembers, setShowMembers] = useState(true);
   const [voiceUsers, setVoiceUsers] = useState<Record<string, string[]>>({});
@@ -47,7 +53,7 @@ export default function CommunityPage() {
   const [showAddMember, setShowAddMember] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showManage, setShowManage] = useState(false);
-  const [friends, setFriends] = useState<any[]>([]);
+  const [friends, setFriends] = useState<ChatUser[]>([]);
 
   const voice = useVoiceChannel(socket);
 
@@ -67,26 +73,27 @@ export default function CommunityPage() {
   }, [communityId, router]);
 
   useEffect(() => {
-    setLoading(true);
-    loadDetail().then((d) => {
+    const init = async () => {
+      const d = await loadDetail();
       if (d) {
         const firstText = [...d.categories.flatMap((c) => c.channels), ...d.channels].find((ch) => ch.type === 'TEXT');
         setCurrentChannel(firstText ?? null);
       }
-      setLoading(false);
-    });
+      setLoadedId(communityId);
+    };
+    void init();
   }, [communityId]);
 
   // ── Socket : présence de la communauté + état vocal ──
   // (messages, réactions et éditions sont gérés par le pont global dans AppShell)
   useEffect(() => {
     if (!socket || !communityId) return;
-    const onVoiceState = ({ channelId, users }: any) => setVoiceUsers((prev) => ({ ...prev, [channelId]: users }));
+    const onVoiceState = ({ channelId, users }: { channelId: string; users: string[] }) => setVoiceUsers((prev) => ({ ...prev, [channelId]: users }));
     socket.on('voice_state', onVoiceState);
 
     // Rejoindre la room de la communauté et récupérer l'occupation vocale actuelle
     const joinCommunity = () => {
-      socket.emit('join_community', { communityId }, (res: any) => {
+      socket.emit('join_community', { communityId }, (res?: { voiceStates?: Record<string, string[]> }) => {
         if (res?.voiceStates) setVoiceUsers((prev) => ({ ...prev, ...res.voiceStates }));
       });
     };
@@ -101,7 +108,7 @@ export default function CommunityPage() {
 
   const myRole = detail?.myRole ?? 'MEMBER';
   const userById = useMemo(() => {
-    const m: Record<string, any> = {};
+    const m: Record<string, MemberUser> = {};
     detail?.members.forEach((mem) => { m[mem.user.id] = mem.user; });
     return m;
   }, [detail]);
@@ -442,7 +449,7 @@ export default function CommunityPage() {
 
 // ── Ligne de salon ──
 function ChannelRow({ ch, active, voiceUsers, userById, canManage, onSelect, onDelete }: {
-  ch: Channel; active: boolean; voiceUsers: string[]; userById: Record<string, any>;
+  ch: Channel; active: boolean; voiceUsers: string[]; userById: Record<string, MemberUser>;
   canManage: boolean; onSelect: () => void; onDelete: () => void;
 }) {
   return (
@@ -483,7 +490,7 @@ function ChannelRow({ ch, active, voiceUsers, userById, canManage, onSelect, onD
 
 // ── Stage vocal ──
 function VoiceStage({ channel, voice, userById, currentUserId }: {
-  channel: Channel; voice: ReturnType<typeof useVoiceChannel>; userById: Record<string, any>; currentUserId?: string;
+  channel: Channel; voice: ReturnType<typeof useVoiceChannel>; userById: Record<string, MemberUser>; currentUserId?: string;
 }) {
   const connected = voice.activeChannelId === channel.id;
   const peerList = Object.values(voice.peers);
@@ -515,7 +522,7 @@ function VoiceStage({ channel, voice, userById, currentUserId }: {
           <>
             <div className="flex flex-wrap gap-5 justify-center">
               {tiles.map((t) => {
-                const u = t.self ? { id: currentUserId } : userById[t.userId];
+                const u: Partial<MemberUser> | undefined = t.self ? { id: currentUserId } : userById[t.userId];
                 return (
                   <div key={t.userId} className="flex flex-col items-center gap-2">
                     <div className="relative w-24 h-24 rounded-2xl flex items-center justify-center transition-all duration-150"
@@ -556,8 +563,8 @@ function CommunitySettingsModal({ detail, myRole, communityId, onClose, onUpdate
   onClose: () => void; onUpdated: () => void; onLeave: () => void; onDelete: () => void;
 }) {
   const [name, setName] = useState(detail.name);
-  const [description, setDescription] = useState((detail as any).description || '');
-  const [image, setImage] = useState((detail as any).image || '');
+  const [description, setDescription] = useState(detail.description || '');
+  const [image, setImage] = useState(detail.image || '');
   const [saving, setSaving] = useState(false);
   const [uploadingImg, setUploadingImg] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'danger'>('overview');
@@ -705,7 +712,7 @@ function CommunitySettingsModal({ detail, myRole, communityId, onClose, onUpdate
 
 // ── Modale ajout membre ──
 function AddMemberModal({ friends, existingIds, onClose, onAdd }: {
-  friends: any[]; existingIds: string[]; onClose: () => void; onAdd: (userId: string) => void;
+  friends: ChatUser[]; existingIds: string[]; onClose: () => void; onAdd: (userId: string) => void;
 }) {
   const [search, setSearch] = useState('');
   const eligible = friends.filter(

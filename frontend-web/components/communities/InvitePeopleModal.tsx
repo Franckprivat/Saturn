@@ -5,11 +5,13 @@ import { QRCodeSVG } from 'qrcode.react';
 import { api } from '@/lib/api';
 import { mediaUrl } from '@/lib/media';
 import { toast } from '@/components/Toast';
+import { apiErrorMessage } from '@/lib/errors';
+import type { ChatUser } from '@/store/chatStore';
 
 interface InvitePeopleModalProps {
   communityId: string;
   communityName: string;
-  friends: any[];
+  friends: ChatUser[];
   existingIds: string[];
   onClose: () => void;
 }
@@ -49,7 +51,7 @@ export function InvitePeopleModal({ communityId, communityName, friends, existin
   const [alreadyInvited, setAlreadyInvited] = useState<Set<string>>(new Set());
 
   // ── Onglet lien ──
-  const [link, setLink] = useState<any | null>(null);
+  const [link, setLink] = useState<{ token: string; expiresAt?: string | null; maxUses?: number | null } | null>(null);
   const [creatingLink, setCreatingLink] = useState(false);
   const [expiry, setExpiry] = useState<number | null>(24 * 7);
   const [maxUses, setMaxUses] = useState<number | null>(null);
@@ -58,9 +60,9 @@ export function InvitePeopleModal({ communityId, communityName, friends, existin
 
   // Invitations déjà en attente (pour griser les amis concernés)
   useEffect(() => {
-    api.get(`/communities/${communityId}/invitations`)
+    api.get<{ status: string; invitee: { id: string } }[]>(`/communities/${communityId}/invitations`)
       .then((r) => setAlreadyInvited(new Set(
-        (r.data as any[]).filter((i) => i.status === 'PENDING').map((i) => i.invitee?.id),
+        r.data.filter((i) => i.status === 'PENDING').map((i) => i.invitee?.id),
       )))
       .catch(() => { /* pas la permission de lister : pas bloquant */ });
   }, [communityId]);
@@ -97,8 +99,8 @@ export function InvitePeopleModal({ communityId, communityName, friends, existin
       setAlreadyInvited((prev) => new Set([...prev, ...selected]));
       setSelected(new Set());
       setMessage('');
-    } catch (e: any) {
-      toast(e?.response?.data?.message || 'Erreur lors de l\'envoi', 'error');
+    } catch (e) {
+      toast(apiErrorMessage(e, 'Erreur lors de l\'envoi'), 'error');
     } finally {
       setSending(false);
     }
@@ -113,8 +115,8 @@ export function InvitePeopleModal({ communityId, communityName, friends, existin
         maxUses,
       });
       setLink(res.data);
-    } catch (e: any) {
-      setLinkError(e?.response?.data?.message || 'Impossible de créer le lien (permissions ?)');
+    } catch (e) {
+      setLinkError(apiErrorMessage(e, 'Impossible de créer le lien (permissions ?)'));
     } finally {
       setCreatingLink(false);
     }
@@ -123,6 +125,7 @@ export function InvitePeopleModal({ communityId, communityName, friends, existin
   const linkUrl = link ? `${window.location.origin}/communities/join/${link.token}` : '';
 
   const copy = async (what: 'url' | 'code') => {
+    if (!link) return;
     await navigator.clipboard.writeText(what === 'url' ? linkUrl : link.token);
     setCopied(what);
     setTimeout(() => setCopied(null), 1800);
@@ -261,7 +264,7 @@ export function InvitePeopleModal({ communityId, communityName, friends, existin
                     </div>
                   </div>
                   <div>
-                    <p className={SECTION} style={{ color: 'var(--sat-muted)' }}>Nombre maximal d'utilisations</p>
+                    <p className={SECTION} style={{ color: 'var(--sat-muted)' }}>Nombre maximal d&apos;utilisations</p>
                     <div className="flex flex-wrap gap-1.5">
                       {MAX_USES_OPTIONS.map((o) => (
                         <button key={o.label} onClick={() => setMaxUses(o.value)}
@@ -287,7 +290,7 @@ export function InvitePeopleModal({ communityId, communityName, friends, existin
                 <>
                   {/* Lien copiable */}
                   <div>
-                    <p className={SECTION} style={{ color: 'var(--sat-muted)' }}>Lien d'invitation</p>
+                    <p className={SECTION} style={{ color: 'var(--sat-muted)' }}>Lien d&apos;invitation</p>
                     <div className="flex gap-2">
                       <div className="flex-1 px-3 py-2.5 rounded-xl text-xs truncate flex items-center"
                         style={{ background: 'var(--sat-void)', border: '1px solid var(--sat-border-2)', color: 'var(--sat-muted)' }}>
@@ -319,7 +322,7 @@ export function InvitePeopleModal({ communityId, communityName, friends, existin
 
                   {/* Code manuel */}
                   <div>
-                    <p className={SECTION} style={{ color: 'var(--sat-muted)' }}>Code d'invitation</p>
+                    <p className={SECTION} style={{ color: 'var(--sat-muted)' }}>Code d&apos;invitation</p>
                     <button onClick={() => copy('code')} title="Copier le code"
                       className="w-full py-2.5 rounded-xl font-mono text-sm font-bold tracking-widest transition hover:opacity-80"
                       style={{
@@ -336,7 +339,7 @@ export function InvitePeopleModal({ communityId, communityName, friends, existin
                   <button onClick={() => setLink(null)}
                     className="w-full py-2 rounded-xl text-xs font-semibold transition hover:opacity-80"
                     style={{ background: 'var(--sat-hover)', color: 'var(--sat-muted)' }}>
-                    Créer un autre lien avec d'autres réglages
+                    Créer un autre lien avec d&apos;autres réglages
                   </button>
                 </>
               )}

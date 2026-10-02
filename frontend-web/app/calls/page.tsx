@@ -72,7 +72,7 @@ export default function CallsPage() {
             <PhoneIcon size={16} style={{ color: 'var(--sat-accent)' }} />
           </div>
           <div>
-            <h1 className="text-[15px] font-bold" style={{ color: 'var(--sat-text)' }}>Journal d'appels</h1>
+            <h1 className="text-[15px] font-bold" style={{ color: 'var(--sat-text)' }}>Journal d&apos;appels</h1>
             <p className="text-[11px]" style={{ color: 'var(--sat-muted)' }}>{calls.length} appel{calls.length !== 1 ? 's' : ''}</p>
           </div>
         </div>

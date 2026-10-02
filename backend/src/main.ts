@@ -17,24 +17,36 @@ async function bootstrap() {
     ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
     : ['http://localhost:3000', 'http://localhost'];
 
-  expressApp.use((req: any, res: any, next: any) => {
-    const origin = req.headers.origin as string | undefined;
-    if (origin && allowedOrigins.includes(origin)) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Vary', 'Origin');
-    }
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,Cookie,Set-Cookie');
-    // Chrome Private Network Access — requis quand localhost:3000 appelle localhost:3001
-    res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  expressApp.use(
+    (
+      req: express.Request,
+      res: express.Response,
+      next: express.NextFunction,
+    ) => {
+      const origin = req.headers.origin;
+      if (origin && allowedOrigins.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
+      }
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader(
+        'Access-Control-Allow-Methods',
+        'GET,POST,PUT,DELETE,PATCH,OPTIONS',
+      );
+      res.setHeader(
+        'Access-Control-Allow-Headers',
+        'Content-Type,Authorization,Cookie,Set-Cookie',
+      );
+      // Chrome Private Network Access — requis quand localhost:3000 appelle localhost:3001
+      res.setHeader('Access-Control-Allow-Private-Network', 'true');
 
-    if (req.method === 'OPTIONS') {
-      res.status(204).end();
-      return;
-    }
-    next();
-  });
+      if (req.method === 'OPTIONS') {
+        res.status(204).end();
+        return;
+      }
+      next();
+    },
+  );
 
   // ── Better-auth avant NestJS et avant body parser ─────────────────────────
   //    /auth     → via Nginx (strip /api/ → /auth/...)
@@ -48,9 +60,13 @@ async function bootstrap() {
   expressApp.use(express.urlencoded({ extended: true, limit: '6mb' }));
 
   // ── NestJS sur l'Express app existante ────────────────────────────────────
-  const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp), {
-    bodyParser: false,
-  });
+  const app = await NestFactory.create(
+    AppModule,
+    new ExpressAdapter(expressApp),
+    {
+      bodyParser: false,
+    },
+  );
 
   app.use(
     helmet({
@@ -80,4 +96,4 @@ async function bootstrap() {
 
   await app.listen(process.env.PORT ?? 3001);
 }
-bootstrap();
+void bootstrap();

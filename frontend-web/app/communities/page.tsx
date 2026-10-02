@@ -9,6 +9,17 @@ import { ToastHost } from '@/components/Toast';
 import { CreateCommunityModal } from '@/components/communities/CreateCommunityModal';
 import { useCommunityStore, type CommunitySummary } from '@/store/communityStore';
 
+interface ReceivedInvite {
+  id: string;
+  message?: string | null;
+  inviter?: { nickname?: string | null; email?: string | null } | null;
+  community: {
+    name: string;
+    image?: string | null;
+    _count?: { members: number };
+  };
+}
+
 export default function CommunitiesHomePage() {
   const router = useRouter();
   const { communities, setCommunities } = useCommunityStore();
@@ -16,7 +27,7 @@ export default function CommunitiesHomePage() {
   const [showCreate, setShowCreate] = useState(false);
 
   // Invitations directes reçues (Accepter / Refuser)
-  const [invites, setInvites] = useState<any[]>([]);
+  const [invites, setInvites] = useState<ReceivedInvite[]>([]);
   const [respondingId, setRespondingId] = useState<string | null>(null);
 
   // Rejoindre avec un code saisi manuellement
@@ -82,7 +93,7 @@ export default function CommunitiesHomePage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold truncate" style={{ color: 'var(--sat-text)' }}>{inv.community.name}</p>
                   <p className="text-[11px] truncate" style={{ color: 'var(--sat-muted)' }}>
-                    {(inv.inviter?.nickname || inv.inviter?.email?.split('@')[0] || 'Quelqu\'un')} t'invite
+                    {(inv.inviter?.nickname || inv.inviter?.email?.split('@')[0] || 'Quelqu\'un')} t&apos;invite
                     · {inv.community._count?.members ?? '?'} membre{(inv.community._count?.members ?? 0) > 1 ? 's' : ''}
                     {inv.message ? ` · « ${inv.message} »` : ''}
                   </p>
@@ -119,8 +130,8 @@ export default function CommunitiesHomePage() {
         ) : communities.length === 0 ? (
           <div className="text-center py-20">
             <div className="w-24 h-24 rounded-3xl mx-auto mb-5 flex items-center justify-center text-5xl" style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border)' }}>🌍</div>
-            <p className="text-lg font-bold" style={{ color: 'var(--sat-text)' }}>Aucune communauté pour l'instant</p>
-            <p className="text-sm mt-1 mb-6" style={{ color: 'var(--sat-muted)' }}>Crée ta propre communauté ou rejoins-en une avec un lien d'invitation.</p>
+            <p className="text-lg font-bold" style={{ color: 'var(--sat-text)' }}>Aucune communauté pour l&apos;instant</p>
+            <p className="text-sm mt-1 mb-6" style={{ color: 'var(--sat-muted)' }}>Crée ta propre communauté ou rejoins-en une avec un lien d&apos;invitation.</p>
             <button onClick={() => setShowCreate(true)}
               className="px-5 py-3 rounded-xl text-sm font-bold text-white transition hover:opacity-90"
               style={{ background: 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
