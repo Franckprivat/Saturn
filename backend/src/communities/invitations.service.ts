@@ -44,7 +44,6 @@ const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const USER_BRIEF = {
   id: true,
   nickname: true,
-  email: true,
   image: true,
   avatarColor: true,
 } as const;
@@ -895,7 +894,7 @@ export class InvitationsService {
     user: {
       id: string;
       nickname: string | null;
-      email: string | null;
+      email?: string | null;
       image: string | null;
     } | null,
   ) {

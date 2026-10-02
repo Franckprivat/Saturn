@@ -229,14 +229,9 @@ export class FriendsService {
   }
 
   async unblockUser(requesterId: string, targetId: string) {
+    // Seul celui qui a bloqué peut débloquer (requesterId = auteur du blocage)
     await this.prisma.friendship.deleteMany({
-      where: {
-        status: 'BLOCKED',
-        OR: [
-          { requesterId, addresseeId: targetId },
-          { requesterId: targetId, addresseeId: requesterId },
-        ],
-      },
+      where: { status: 'BLOCKED', requesterId, addresseeId: targetId },
     });
   }
 
@@ -244,7 +239,7 @@ export class FriendsService {
   getUserBrief(id: string) {
     return this.prisma.user.findUnique({
       where: { id },
-      select: { id: true, nickname: true, email: true, image: true },
+      select: { id: true, nickname: true, image: true },
     });
   }
 

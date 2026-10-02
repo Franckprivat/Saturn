@@ -23,7 +23,9 @@ export default function LoginPage() {
       setLoading(false);
       return;
     }
-    router.push(searchParams.get('redirect') || '/');
+    // Redirection interne uniquement (pas de « //site.com » ni d'URL absolue)
+    const redirect = searchParams.get('redirect');
+    router.push(redirect && /^\/(?![/\\])/.test(redirect) ? redirect : '/');
   };
 
   return (

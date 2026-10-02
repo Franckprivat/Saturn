@@ -8,7 +8,6 @@ import { PrismaService } from '../prisma/prisma.service';
 
 const SENDER_SELECT = {
   id: true,
-  email: true,
   nickname: true,
   image: true,
   avatarColor: true,
@@ -20,7 +19,7 @@ const MESSAGE_INCLUDE = {
     include: { sender: { select: SENDER_SELECT } },
   },
   reactions: {
-    include: { user: { select: { id: true, nickname: true, email: true } } },
+    include: { user: { select: { id: true, nickname: true } } },
     orderBy: { createdAt: 'asc' as const },
   },
   readBy: {
@@ -494,7 +493,7 @@ export class MessagesService {
 
     const reactions = await this.prisma.messageReaction.findMany({
       where: { messageId },
-      include: { user: { select: { id: true, nickname: true, email: true } } },
+      include: { user: { select: { id: true, nickname: true } } },
       orderBy: { createdAt: 'asc' },
     });
 

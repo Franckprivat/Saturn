@@ -11,7 +11,6 @@ import { visibleTo } from '../messages/messages.service';
 
 const USER_SELECT = {
   id: true,
-  email: true,
   nickname: true,
   image: true,
   avatarColor: true,
@@ -225,6 +224,9 @@ export class ConversationsService {
     targetUserId: string,
     role: 'ADMIN' | 'MEMBER',
   ) {
+    if (role !== 'ADMIN' && role !== 'MEMBER') {
+      throw new BadRequestException('Rôle invalide');
+    }
     await this.ensureAdmin(conversationId, requesterId);
     return this.prisma.conversationParticipant.updateMany({
       where: { conversationId, userId: targetUserId },
@@ -241,6 +243,11 @@ export class ConversationsService {
     return this.prisma.conversationParticipant.deleteMany({
       where: { conversationId, userId: targetUserId },
     });
+  }
+
+  /** Lève une erreur si les deux utilisateurs ne sont pas amis. */
+  ensureFriends(userId: string, otherUserId: string) {
+    return this.friendsService.ensureAreFriends(userId, otherUserId);
   }
 
   async isUserInConversation(

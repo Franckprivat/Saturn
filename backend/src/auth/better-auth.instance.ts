@@ -30,7 +30,13 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     sendResetPassword: async ({ user, url }) => {
-      if (!process.env.SMTP_USER) return; // email non configuré, on skip silencieusement
+      if (!process.env.SMTP_USER) {
+        // Sans SMTP, aucun e-mail ne part : le signaler dans les logs
+        console.warn(
+          `[auth] Reset de mot de passe demandé pour ${user.id} mais SMTP_USER n'est pas configuré`,
+        );
+        return;
+      }
       await transporter.sendMail({
         from: `"Saturn" <${process.env.SMTP_USER}>`,
         to: user.email,
@@ -72,5 +78,25 @@ export const auth = betterAuth({
     },
   },
   account: { modelName: 'account' },
+  databaseHooks: {
+    user: {
+      create: {
+        // Le pseudo sert de nom affiché partout (l'e-mail n'est plus exposé
+        // aux autres utilisateurs) : on garantit qu'il est toujours rempli.
+        before: (user) => {
+          const nickname = (user as { nickname?: string | null }).nickname;
+          return Promise.resolve({
+            data: {
+              ...user,
+              nickname:
+                nickname?.trim() ||
+                user.name?.trim() ||
+                user.email.split('@')[0],
+            },
+          });
+        },
+      },
+    },
+  },
   verification: { modelName: 'verification' },
 });

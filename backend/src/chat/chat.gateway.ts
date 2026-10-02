@@ -147,6 +147,39 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server.in(`user:${userId}`).socketsLeave(rooms);
   }
 
+  /**
+   * Utilisateurs autorisés à voir la présence de `userId` : amis, membres de ses
+   * conversations et de ses communautés, hors blocages.
+   */
+  private async presenceAudience(userId: string): Promise<string[]> {
+    const [friendships, participants, members] = await Promise.all([
+      this.prisma.friendship.findMany({
+        where: { OR: [{ requesterId: userId }, { addresseeId: userId }] },
+        select: { requesterId: true, addresseeId: true, status: true },
+      }),
+      this.prisma.conversationParticipant.findMany({
+        where: { conversation: { participants: { some: { userId } } } },
+        select: { userId: true },
+      }),
+      this.prisma.communityMember.findMany({
+        where: { community: { members: { some: { userId } } } },
+        select: { userId: true },
+      }),
+    ]);
+    const other = (f: { requesterId: string; addresseeId: string }) =>
+      f.requesterId === userId ? f.addresseeId : f.requesterId;
+    const blocked = new Set(
+      friendships.filter((f) => f.status === 'BLOCKED').map(other),
+    );
+    const ids = new Set<string>([
+      ...friendships.filter((f) => f.status === 'ACCEPTED').map(other),
+      ...participants.map((p) => p.userId),
+      ...members.map((m) => m.userId),
+    ]);
+    ids.delete(userId);
+    return Array.from(ids).filter((id) => !blocked.has(id));
+  }
+
   async handleConnection(client: AuthedSocket) {
     try {
       const cookieHeader = client.handshake.headers.cookie || '';
@@ -165,10 +198,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       await client.join(`user:${session.user.id}`);
       const prev = this.onlineUsers.get(session.user.id) ?? 0;
       this.onlineUsers.set(session.user.id, prev + 1);
-      if (prev === 0)
-        this.server.emit('user_online', { userId: session.user.id });
+      // Présence partagée uniquement avec les contacts (amis, conversations,
+      // communautés communes), pas avec tous les comptes connectés.
+      const audience = await this.presenceAudience(session.user.id);
+      if (prev === 0 && audience.length) {
+        this.server
+          .to(audience.map((id) => `user:${id}`))
+          .emit('user_online', { userId: session.user.id });
+      }
       client.emit('online_users', {
-        userIds: Array.from(this.onlineUsers.keys()),
+        userIds: audience.filter((id) => this.onlineUsers.has(id)),
       });
       // Plancher de « vu à… » dès la connexion : si le serveur meurt brutalement
       // (pas de handleDisconnect), le dernier passage reste au moins daté d'ici.
@@ -184,7 +223,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  handleDisconnect(client: AuthedSocket) {
+  async handleDisconnect(client: AuthedSocket) {
     if (!client.user) return;
     this.leaveAllVoiceRooms(client);
     const userId = client.user.id;
@@ -196,10 +235,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.prisma.user
         .update({ where: { id: userId }, data: { lastSeenAt } })
         .catch(() => {});
-      this.server.emit('user_offline', {
-        userId,
-        lastSeenAt: lastSeenAt.toISOString(),
-      });
+      const audience = await this.presenceAudience(userId).catch(() => []);
+      // Reconnecté entre-temps (rechargement de page) : ne pas l'annoncer hors ligne
+      if (audience.length && !this.onlineUsers.has(userId)) {
+        this.server
+          .to(audience.map((id) => `user:${id}`))
+          .emit('user_offline', {
+            userId,
+            lastSeenAt: lastSeenAt.toISOString(),
+          });
+      }
     } else {
       this.onlineUsers.set(userId, count);
     }
