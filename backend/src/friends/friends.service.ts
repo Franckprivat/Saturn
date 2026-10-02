@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -64,10 +68,15 @@ export class FriendsService {
 
     if (existing) {
       if (existing.status === 'BLOCKED') {
-        throw new ForbiddenException('Impossible d\'envoyer une demande à cet utilisateur');
+        throw new ForbiddenException(
+          "Impossible d'envoyer une demande à cet utilisateur",
+        );
       }
       // Demande croisée : l'autre m'avait déjà demandé → on devient amis directement
-      if (existing.status === 'PENDING' && existing.requesterId === addresseeId) {
+      if (
+        existing.status === 'PENDING' &&
+        existing.requesterId === addresseeId
+      ) {
         return this.prisma.friendship.update({
           where: { id: existing.id },
           data: { status: 'ACCEPTED' },
@@ -88,17 +97,26 @@ export class FriendsService {
     return this.prisma.friendship.findMany({
       where: {
         status: { in: ['PENDING', 'ACCEPTED'] },
-        OR: [
-          { requesterId: userId },
-          { addresseeId: userId },
-        ],
+        OR: [{ requesterId: userId }, { addresseeId: userId }],
       },
       include: {
         requester: {
-          select: { id: true, nickname: true, image: true, avatarColor: true, lastSeenAt: true },
+          select: {
+            id: true,
+            nickname: true,
+            image: true,
+            avatarColor: true,
+            lastSeenAt: true,
+          },
         },
         addressee: {
-          select: { id: true, nickname: true, image: true, avatarColor: true, lastSeenAt: true },
+          select: {
+            id: true,
+            nickname: true,
+            image: true,
+            avatarColor: true,
+            lastSeenAt: true,
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -109,17 +127,26 @@ export class FriendsService {
     const friendships = await this.prisma.friendship.findMany({
       where: {
         status: 'ACCEPTED',
-        OR: [
-          { requesterId: userId },
-          { addresseeId: userId },
-        ],
+        OR: [{ requesterId: userId }, { addresseeId: userId }],
       },
       include: {
         requester: {
-          select: { id: true, nickname: true, image: true, avatarColor: true, lastSeenAt: true },
+          select: {
+            id: true,
+            nickname: true,
+            image: true,
+            avatarColor: true,
+            lastSeenAt: true,
+          },
         },
         addressee: {
-          select: { id: true, nickname: true, image: true, avatarColor: true, lastSeenAt: true },
+          select: {
+            id: true,
+            nickname: true,
+            image: true,
+            avatarColor: true,
+            lastSeenAt: true,
+          },
         },
       },
     });
@@ -175,7 +202,8 @@ export class FriendsService {
         ],
       },
     });
-    if (!friendship) throw new NotFoundException('Vous n\'êtes pas amis avec cet utilisateur');
+    if (!friendship)
+      throw new NotFoundException("Vous n'êtes pas amis avec cet utilisateur");
     await this.prisma.friendship.delete({ where: { id: friendship.id } });
     return { ok: true };
   }
@@ -221,7 +249,10 @@ export class FriendsService {
   }
 
   /** True si l'un des deux utilisateurs a bloqué l'autre. */
-  async isBlockedBetween(userId: string, otherUserId: string): Promise<boolean> {
+  async isBlockedBetween(
+    userId: string,
+    otherUserId: string,
+  ): Promise<boolean> {
     const blocked = await this.prisma.friendship.count({
       where: {
         status: 'BLOCKED',
@@ -250,4 +281,3 @@ export class FriendsService {
     }
   }
 }
-

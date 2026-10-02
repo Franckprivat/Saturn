@@ -240,7 +240,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Pont temps réel global : messages, réactions, reçus de lecture → store
   const socket = useChatSocket();
   useGlobalChatEvents(socket);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<{ id: string; name?: string | null; email?: string | null } | null>(null);
   const [profile, setProfile] = useState<{ image?: string; avatarColor?: string; nickname?: string } | null>(null);
   const totalUnread = useChatStore((s) => s.totalUnread());
   const friendRequestsBadge = useBadgeStore((s) => s.friendRequests);

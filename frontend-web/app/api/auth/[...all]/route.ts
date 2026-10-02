@@ -3,15 +3,12 @@ import { auth, ensureAuthMigrations } from "@/lib/auth";
 
 const handler = toNextJsHandler(auth);
 
-export async function GET(...args: any[]) {
+export async function GET(request: Request) {
   await ensureAuthMigrations();
-  // @ts-expect-error - signature dépend de better-auth/next-js
-  return handler.GET(...args);
+  return handler.GET(request);
 }
 
-export async function POST(...args: any[]) {
+export async function POST(request: Request) {
   await ensureAuthMigrations();
-  // @ts-expect-error - signature dépend de better-auth/next-js
-  return handler.POST(...args);
+  return handler.POST(request);
 }
-

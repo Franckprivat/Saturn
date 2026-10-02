@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import type { Socket } from 'socket.io-client';
 import { PhoneIcon, PhoneOffIcon, MicIcon, MicOffIcon, VideoIcon, VideoOffIcon } from '@/components/Icons';
 import { saveCallEntry } from '@/lib/callLog';
 import { mediaUrl } from '@/lib/media';
 import { setCallTab, clearCallTab } from '@/lib/callTab';
 
 interface CallModalProps {
-  socket: any;
+  socket: Socket | null;
   conversationId: string;
   callType: 'audio' | 'video';
   isIncoming: boolean;
@@ -34,8 +35,8 @@ async function measureQuality(pc: RTCPeerConnection): Promise<Quality | null> {
     const stats = await pc.getStats();
     let rtt: number | undefined;
     stats.forEach((report) => {
-      if (report.type === 'candidate-pair' && (report as any).nominated && (report as any).currentRoundTripTime !== undefined) {
-        rtt = (report as any).currentRoundTripTime;
+      if (report.type === 'candidate-pair' && (report as RTCIceCandidatePairStats).nominated && (report as RTCIceCandidatePairStats).currentRoundTripTime !== undefined) {
+        rtt = (report as RTCIceCandidatePairStats).currentRoundTripTime;
       }
     });
     if (rtt === undefined) return null;
@@ -76,7 +77,8 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const localRef = useRef<HTMLVideoElement>(null);
-  const remoteRef = useRef<HTMLVideoElement>(null);
+  const remoteRef = useRef<HTMLMediaElement | null>(null);
+  const setRemoteEl = (el: HTMLMediaElement | null) => { remoteRef.current = el; };
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const durationRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -155,7 +157,7 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
     stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
     pc.onicecandidate = (e) => {
-      if (e.candidate) socket.emit('call_ice_candidate', { conversationId, candidate: e.candidate.toJSON() });
+      if (e.candidate) socket?.emit('call_ice_candidate', { conversationId, candidate: e.candidate.toJSON() });
     };
     pc.ontrack = (e) => { if (e.streams[0]) attachRemote(e.streams[0]); };
 
@@ -166,7 +168,7 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
       try {
         const offer = await pc.createOffer({ iceRestart: true });
         await pc.setLocalDescription(offer);
-        socket.emit('call_renegotiate', { conversationId, offer });
+        socket?.emit('call_renegotiate', { conversationId, offer });
       } catch { /* la connexion finira par échouer → finish */ }
     };
 
@@ -224,7 +226,7 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
       await flushCandidates();
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      socket.emit('call_answer', { conversationId, answer });
+      socket?.emit('call_answer', { conversationId, answer });
     } catch {
       finish(true);
     }
@@ -253,7 +255,7 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
         const pc = buildPeer(stream);
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        socket.emit('call_offer', { conversationId, offer, callType });
+        socket?.emit('call_offer', { conversationId, offer, callType });
       } catch {
         finish(false);
       }
@@ -281,14 +283,14 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
   // ── Évènements socket ──
   useEffect(() => {
     if (!socket) return;
-    const onAnswered = async ({ answer }: any) => {
+    const onAnswered = async ({ answer }: { answer: RTCSessionDescriptionInit }) => {
       try {
         await pcRef.current?.setRemoteDescription(answer);
         await flushCandidates();
         setStatus((s) => (s === 'ringing' ? 'connecting' : s));
       } catch { /* ignore */ }
     };
-    const onIce = async ({ candidate }: any) => {
+    const onIce = async ({ candidate }: { candidate?: RTCIceCandidateInit | null }) => {
       if (!candidate) return;
       const pc = pcRef.current;
       if (pc && pc.remoteDescription) {
@@ -298,7 +300,7 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
       }
     };
     // Renégociation reçue (l'appelant a fait un ICE restart) → on répond
-    const onRenegotiate = async ({ offer }: any) => {
+    const onRenegotiate = async ({ offer }: { offer: RTCSessionDescriptionInit }) => {
       const pc = pcRef.current;
       if (!pc) return;
       try {
@@ -389,7 +391,7 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
         <div className="relative rounded-2xl overflow-hidden shadow-2xl"
           style={{ width: 'min(92vw, 720px)', background: 'var(--sat-void)', border: '1px solid var(--sat-border-2)' }}>
           <div ref={videoContainerRef} className="relative aspect-video" style={{ background: 'var(--sat-void)' }}>
-            <video ref={remoteRef} autoPlay playsInline className="w-full h-full object-cover" />
+            <video ref={setRemoteEl} autoPlay playsInline className="w-full h-full object-cover" />
             {(status !== 'active' && status !== 'reconnecting') && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3" style={{ background: 'var(--sat-void)' }}>
                 <Avatar image={callerImage} initial={initial} ringing={status === 'ringing'} />
@@ -438,7 +440,7 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
       ) : (
         <div className="rounded-2xl overflow-hidden shadow-2xl"
           style={{ width: 320, background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)' }}>
-          <audio ref={remoteRef as any} autoPlay />
+          <audio ref={setRemoteEl} autoPlay />
           <div className="flex flex-col items-center pt-10 pb-6 px-6 gap-4 relative">
             <Avatar image={callerImage} initial={initial} ringing={status === 'ringing'} />
             <div className="text-center z-10">

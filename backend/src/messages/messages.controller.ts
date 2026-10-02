@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import { getSessionUser } from '../auth/get-session-user';
+import type { Request } from 'express';
 
 @Controller('conversations/:conversationId/messages')
 export class MessagesController {
@@ -16,7 +17,7 @@ export class MessagesController {
 
   @Get()
   async getMessages(
-    @Req() req: any,
+    @Req() req: Request,
     @Param('conversationId') conversationId: string,
     @Query('cursor') cursor?: string,
     @Query('limit') limit?: string,
@@ -32,7 +33,7 @@ export class MessagesController {
 
   @Get('search')
   async searchMessages(
-    @Req() req: any,
+    @Req() req: Request,
     @Param('conversationId') conversationId: string,
     @Query('q') q: string,
   ) {
@@ -46,7 +47,7 @@ export class MessagesController {
 
   @Get('pinned')
   async getPinned(
-    @Req() req: any,
+    @Req() req: Request,
     @Param('conversationId') conversationId: string,
   ) {
     const user = await getSessionUser(req);
@@ -55,7 +56,7 @@ export class MessagesController {
 
   @Post('read')
   async markRead(
-    @Req() req: any,
+    @Req() req: Request,
     @Param('conversationId') conversationId: string,
   ) {
     const user = await getSessionUser(req);
@@ -64,7 +65,7 @@ export class MessagesController {
 
   @Post(':messageId/pin')
   async pin(
-    @Req() req: any,
+    @Req() req: Request,
     @Param('conversationId') conversationId: string,
     @Param('messageId') messageId: string,
   ) {
@@ -74,7 +75,7 @@ export class MessagesController {
 
   @Delete(':messageId/pin')
   async unpin(
-    @Req() req: any,
+    @Req() req: Request,
     @Param('conversationId') conversationId: string,
     @Param('messageId') messageId: string,
   ) {

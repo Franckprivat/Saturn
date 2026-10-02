@@ -22,6 +22,15 @@ interface AuthedSocket extends Socket {
   user?: { id: string; email: string };
 }
 
+interface SocketData {
+  user?: { id: string; email: string };
+}
+
+/** Utilisateur d'un socket, y compris ceux renvoyés par fetchSockets(). */
+function socketUserId(s: { data: unknown }): string | undefined {
+  return (s.data as SocketData | undefined)?.user?.id;
+}
+
 @WebSocketGateway({
   cors: {
     origin: process.env.ALLOWED_ORIGINS
@@ -87,7 +96,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
     const sockets = await this.server.in(message.conversationId).fetchSockets();
     for (const s of sockets) {
-      const userId = s.data?.user?.id;
+      const userId = socketUserId(s);
       if (userId && canSeeMessage(message, userId)) s.emit(event, payload);
     }
   }
@@ -151,7 +160,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       client.user = { id: session.user.id, email: session.user.email };
       // Aussi dans socket.data : seule propriété garantie sur les sockets de fetchSockets()
-      client.data.user = client.user;
+      (client.data as SocketData).user = client.user;
       // Salle personnelle pour les notifications ciblées
       await client.join(`user:${session.user.id}`);
       const prev = this.onlineUsers.get(session.user.id) ?? 0;
@@ -236,7 +245,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('typing_start')
-  async handleTypingStart(
+  handleTypingStart(
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { conversationId: string },
   ) {
@@ -248,7 +257,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('typing_stop')
-  async handleTypingStop(
+  handleTypingStop(
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { conversationId: string },
   ) {
@@ -297,7 +306,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     // Notification push aux participants absents de la salle
     const senderName =
-      (message as any).sender?.nickname ||
+      message.sender?.nickname ||
       client.user.email?.split('@')[0] ||
       "Quelqu'un";
     const preview = message.content
@@ -307,7 +316,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       .in(data.conversationId)
       .fetchSockets();
     const usersInRoom = new Set(
-      socketsInRoom.map((s) => s.data?.user?.id).filter(Boolean),
+      socketsInRoom.map((s) => socketUserId(s)).filter(Boolean),
     );
 
     const conv = await this.prisma.conversation.findUnique({
@@ -326,7 +335,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             body: preview,
             href: `/chat?conversationId=${data.conversationId}`,
             conversationId: data.conversationId,
-            image: (message as any).sender?.image,
+            image: message.sender?.image,
             timestamp: new Date().toISOString(),
           });
         }
@@ -457,7 +466,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     conversationId: string,
     excludeUserId: string,
     event: string,
-    payload: any,
+    payload: unknown,
   ) {
     const targets = await this.otherParticipantIds(
       conversationId,
@@ -472,7 +481,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   async handleCallOffer(
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody()
-    data: { conversationId: string; offer: any; callType: 'audio' | 'video' },
+    data: {
+      conversationId: string;
+      offer: unknown;
+      callType: 'audio' | 'video';
+    },
   ) {
     if (!client.user) return;
     const targets = await this.otherParticipantIds(
@@ -502,7 +515,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('call_answer')
   async handleCallAnswer(
     @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() data: { conversationId: string; answer: any },
+    @MessageBody() data: { conversationId: string; answer: unknown },
   ) {
     if (!client.user) return;
     await this.relayCall(data.conversationId, client.user.id, 'call_answered', {
@@ -514,7 +527,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('call_ice_candidate')
   async handleIceCandidate(
     @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() data: { conversationId: string; candidate: any },
+    @MessageBody() data: { conversationId: string; candidate: unknown },
   ) {
     if (!client.user) return;
     await this.relayCall(
@@ -532,7 +545,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('call_renegotiate')
   async handleCallRenegotiate(
     @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() data: { conversationId: string; offer: any },
+    @MessageBody() data: { conversationId: string; offer: unknown },
   ) {
     if (!client.user) return;
     await this.relayCall(
@@ -625,13 +638,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       channelId: data.channelId,
       peers: existingPeers,
     });
-    client
-      .to(roomKey)
-      .emit('voice_peer_joined', {
-        channelId: data.channelId,
-        socketId: client.id,
-        userId: client.user.id,
-      });
+    client.to(roomKey).emit('voice_peer_joined', {
+      channelId: data.channelId,
+      socketId: client.id,
+      userId: client.user.id,
+    });
     this.broadcastVoiceState(data.channelId, channel.communityId);
     return { ok: true };
   }
@@ -645,14 +656,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const room = this.voiceRooms.get(data.channelId);
     if (room?.peers.has(client.id)) {
       room.peers.delete(client.id);
-      client.leave(`voice:${data.channelId}`);
-      client
-        .to(`voice:${data.channelId}`)
-        .emit('voice_peer_left', {
-          channelId: data.channelId,
-          socketId: client.id,
-          userId: client.user.id,
-        });
+      void client.leave(`voice:${data.channelId}`);
+      client.to(`voice:${data.channelId}`).emit('voice_peer_left', {
+        channelId: data.channelId,
+        socketId: client.id,
+        userId: client.user.id,
+      });
       if (room.peers.size === 0) this.voiceRooms.delete(data.channelId);
       this.broadcastVoiceState(data.channelId, room.communityId);
     }
@@ -661,7 +670,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('voice_signal')
   handleVoiceSignal(
     @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() data: { targetSocketId: string; signal: any },
+    @MessageBody() data: { targetSocketId: string; signal: unknown },
   ) {
     if (!client.user) return;
     // Signalisation uniquement entre pairs d'un même salon vocal

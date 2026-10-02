@@ -14,6 +14,7 @@ import { existsSync, mkdirSync } from 'fs';
 import { writeFile } from 'fs/promises';
 import { randomUUID } from 'crypto';
 import { getSessionUser } from '../auth/get-session-user';
+import type { Request } from 'express';
 import { ALLOWED_TYPES, baseMime, matchesSignature } from './file-types';
 
 const USE_R2 = !!(
@@ -60,7 +61,10 @@ export class UploadController {
       },
     }),
   )
-  async uploadFile(@Req() req: any, @UploadedFile() file: Express.Multer.File) {
+  async uploadFile(
+    @Req() req: Request,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
     await getSessionUser(req);
     if (!file) throw new BadRequestException('Aucun fichier reçu');
 

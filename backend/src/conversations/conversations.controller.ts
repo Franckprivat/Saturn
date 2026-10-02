@@ -11,6 +11,7 @@ import {
 import { ConversationsService } from './conversations.service';
 import { ChatGateway } from '../chat/chat.gateway';
 import { getSessionUser } from '../auth/get-session-user';
+import type { Request } from 'express';
 
 function displayName(
   user: { nickname?: string | null; email?: string | null } | null | undefined,
@@ -28,20 +29,20 @@ export class ConversationsController {
   ) {}
 
   @Get()
-  async getMyConversations(@Req() req: any) {
+  async getMyConversations(@Req() req: Request) {
     const user = await getSessionUser(req);
     return this.conversationsService.getUserConversations(user.id);
   }
 
   @Get(':id')
-  async getConversation(@Req() req: any, @Param('id') id: string) {
+  async getConversation(@Req() req: Request, @Param('id') id: string) {
     const user = await getSessionUser(req);
     return this.conversationsService.getConversationById(id, user.id);
   }
 
   @Post('group')
   async createGroup(
-    @Req() req: any,
+    @Req() req: Request,
     @Body('name') name: string,
     @Body('memberIds') memberIds: string[],
   ) {
@@ -60,14 +61,14 @@ export class ConversationsController {
   }
 
   @Post('dm')
-  async createOrGetDm(@Req() req: any, @Body('userId') userId: string) {
+  async createOrGetDm(@Req() req: Request, @Body('userId') userId: string) {
     const user = await getSessionUser(req);
     return this.conversationsService.getOrCreateDmConversation(user.id, userId);
   }
 
   @Patch(':id')
   async updateGroup(
-    @Req() req: any,
+    @Req() req: Request,
     @Param('id') id: string,
     @Body() body: { name?: string; description?: string; image?: string },
   ) {
@@ -111,7 +112,7 @@ export class ConversationsController {
 
   @Post(':id/members')
   async addMembers(
-    @Req() req: any,
+    @Req() req: Request,
     @Param('id') id: string,
     @Body('memberIds') memberIds: string[],
   ) {
@@ -123,9 +124,7 @@ export class ConversationsController {
     );
     // Message système uniquement pour les membres réellement ajoutés
     for (const memberId of memberIds ?? []) {
-      const added = result?.participants.find(
-        (p: any) => p.user.id === memberId,
-      );
+      const added = result?.participants.find((p) => p.user.id === memberId);
       if (!added) continue;
       await this.chatGateway.emitSystemMessage(
         id,
@@ -138,7 +137,7 @@ export class ConversationsController {
 
   @Patch(':id/members/:userId/role')
   async setRole(
-    @Req() req: any,
+    @Req() req: Request,
     @Param('id') id: string,
     @Param('userId') targetUserId: string,
     @Body('role') role: 'ADMIN' | 'MEMBER',
@@ -154,9 +153,7 @@ export class ConversationsController {
       id,
       user.id,
     );
-    const target = conv.participants.find(
-      (p: any) => p.user.id === targetUserId,
-    );
+    const target = conv.participants.find((p) => p.user.id === targetUserId);
     const nick = displayName(target?.user, targetUserId);
     const msg =
       role === 'ADMIN'
@@ -167,20 +164,20 @@ export class ConversationsController {
   }
 
   @Post(':id/invite')
-  async generateInvite(@Req() req: any, @Param('id') id: string) {
+  async generateInvite(@Req() req: Request, @Param('id') id: string) {
     const user = await getSessionUser(req);
     return this.conversationsService.generateInviteLink(id, user.id);
   }
 
   @Post('join/:token')
-  async joinByInvite(@Req() req: any, @Param('token') token: string) {
+  async joinByInvite(@Req() req: Request, @Param('token') token: string) {
     const user = await getSessionUser(req);
     return this.conversationsService.joinByInvite(token, user.id);
   }
 
   @Delete(':id/members/:userId')
   async removeMember(
-    @Req() req: any,
+    @Req() req: Request,
     @Param('id') id: string,
     @Param('userId') targetUserId: string,
   ) {
@@ -189,9 +186,7 @@ export class ConversationsController {
       id,
       user.id,
     );
-    const target = conv.participants.find(
-      (p: any) => p.user.id === targetUserId,
-    );
+    const target = conv.participants.find((p) => p.user.id === targetUserId);
     const nick = displayName(target?.user, targetUserId);
     await this.conversationsService.removeMember(id, user.id, targetUserId);
     this.chatGateway.evictFromConversation(targetUserId, id);
@@ -204,14 +199,9 @@ export class ConversationsController {
   }
 
   @Post(':id/leave')
-  async leaveGroup(@Req() req: any, @Param('id') id: string) {
+  async leaveGroup(@Req() req: Request, @Param('id') id: string) {
     const user = await getSessionUser(req);
-    const conv = await this.conversationsService.getConversationById(
-      id,
-      user.id,
-    );
-    const me = conv.participants.find((p: any) => p.user.id === user.id);
-    const nick = displayName(me?.user, 'Un membre');
+    await this.conversationsService.getConversationById(id, user.id);
     await this.conversationsService.leaveGroup(id, user.id);
     this.chatGateway.evictFromConversation(user.id, id);
     await this.chatGateway.emitSystemMessage(id, user.id, `a quitté le groupe`);
@@ -219,7 +209,7 @@ export class ConversationsController {
   }
 
   @Delete(':id')
-  async deleteGroup(@Req() req: any, @Param('id') id: string) {
+  async deleteGroup(@Req() req: Request, @Param('id') id: string) {
     const user = await getSessionUser(req);
     const result = await this.conversationsService.deleteGroup(id, user.id);
     this.chatGateway.closeConversationRoom(id);

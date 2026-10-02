@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ChatGateway } from '../chat/chat.gateway';
 
@@ -130,7 +131,7 @@ export class InvitationsService {
       },
     });
     await this.audit(communityId, userId, 'settings_updated', {
-      metadata: data as any,
+      metadata: data as Prisma.InputJsonObject,
     });
     return this.getSettings(communityId, userId);
   }
@@ -145,7 +146,9 @@ export class InvitationsService {
       joinPolicy: c?.joinPolicy ?? 'OPEN',
       permissions: {
         ...DEFAULT_PERMISSIONS,
-        ...((c?.permissions as any) ?? {}),
+        ...((c?.permissions as Partial<
+          Record<PermissionAction, Role>
+        > | null) ?? {}),
       },
       defaults: DEFAULT_PERMISSIONS,
     };
@@ -157,7 +160,11 @@ export class InvitationsService {
     communityId: string,
     actorId: string,
     action: string,
-    extra: { targetUserId?: string; linkId?: string; metadata?: any } = {},
+    extra: {
+      targetUserId?: string;
+      linkId?: string;
+      metadata?: Prisma.InputJsonValue;
+    } = {},
   ) {
     return this.prisma.communityAuditLog.create({
       data: { communityId, actorId, action, ...extra },

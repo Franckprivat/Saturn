@@ -54,7 +54,7 @@ export default function SignupPage() {
     setLoading(true);
     const { error: authError } = await authClient.signUp.email({
       email, password, name: nickname, firstName, lastName, nickname,
-    } as any);
+    } as Parameters<typeof authClient.signUp.email>[0]); // champs additionnels déclarés côté serveur
     if (authError) { setError(authError.message || "Erreur lors de l'inscription"); setLoading(false); return; }
     try {
       await api.patch('/users/me', { image: image || null, avatarColor: image ? null : color });

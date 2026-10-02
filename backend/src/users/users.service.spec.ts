@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UsersService } from './users.service';
 import { mockPrismaProvider } from '../../test/mock-providers';
+import { PrismaService } from '../prisma/prisma.service';
 
 describe('UsersService', () => {
   let service: UsersService;
@@ -20,7 +21,9 @@ describe('UsersService', () => {
 
 describe('UsersService.updateUser', () => {
   const update = jest.fn().mockResolvedValue({});
-  const service = new UsersService({ user: { update } } as any);
+  const service = new UsersService({
+    user: { update },
+  } as unknown as PrismaService);
 
   beforeEach(() => update.mockClear());
 
@@ -30,8 +33,10 @@ describe('UsersService.updateUser', () => {
       email: 'pirate@example.com',
       emailVerified: true,
       id: 'autre',
-    } as any);
-    expect(update.mock.calls[0][0].data).toEqual({ nickname: 'Franck' });
+    } as Parameters<UsersService['updateUser']>[1]);
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { nickname: 'Franck' } }),
+    );
   });
 
   it("refuse un lien social qui n'est pas en http(s)", async () => {

@@ -10,7 +10,7 @@ function validateImageUrl(url: string | null | undefined): string | null {
     throw new BadRequestException('URL image invalide');
   }
   // Accepté : upload interne (relatif) ou URL http(s) absolue (DiceBear, R2…)
-  if (/^\/uploads\/[\w.\-]+$/.test(trimmed)) return trimmed;
+  if (/^\/uploads\/[\w.-]+$/.test(trimmed)) return trimmed;
   if (!/^https?:\/\//i.test(trimmed)) {
     throw new BadRequestException(
       'URL image invalide : /uploads/… ou http(s) uniquement',
@@ -117,7 +117,7 @@ export class UsersService {
       if (color === null || color === '') update.avatarColor = null;
       else if (
         typeof color === 'string' &&
-        /^[\w\s#\[\]\/:.-]{1,100}$/.test(color)
+        /^[\w\s#[\]/:.-]{1,100}$/.test(color)
       )
         update.avatarColor = color;
       else throw new BadRequestException("Couleur d'avatar invalide");
