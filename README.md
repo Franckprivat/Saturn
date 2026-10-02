@@ -158,43 +158,38 @@ cp .env.example .env
 docker compose up -d --build   # db + backend + frontend + nginx
 ```
 
-| URL | Service |
-|-----|---------|
-| http://localhost | App through Nginx (use this one) |
-| http://localhost:3000 | Next.js directly |
-| http://localhost:3001 | NestJS API directly |
+The app is at **http://localhost**. The browser only talks to Nginx, which routes `/api`, `/api/auth`, `/uploads` and `/socket.io` to the backend and everything else to Next.js.
 
-Postgres is exposed on `127.0.0.1:5433` for local tools. Stop with `docker compose down` (add `-v` to wipe the database).
+Stop with `docker compose down` (add `-v` to wipe the database).
 
-### Option B — Run locally (hot reload, no containers for the apps)
+### Option B — Run locally (hot reload)
 
 Postgres still runs in Docker; the API and frontend run on your machine.
 
-| Env file | Read by | Notes |
-|----------|---------|-------|
-| `.env` (repo root) | `docker compose` (db service) | Postgres user / password / db name |
-| `backend/.env` | NestJS + Prisma (`dotenv`) | Same keys as `.env.example`, but the DB host is **`localhost:5433`**, not `db:5432` |
-| `frontend-web/.env.local` | Next.js | Optional — defaults to the API on `http://localhost:3001` |
-
 ```bash
-# 1. Database only (uses the root .env)
+# 1. Database only (needs the root .env from Option A for POSTGRES_*)
 cp .env.example .env
-docker compose up -d db
+docker compose up -d db          # exposed on localhost:5433
 
 # 2. Backend
 cd backend
-cp ../.env.example .env
-#   -> same credentials as the root .env, but point DATABASE_URL and
-#      BETTER_AUTH_DATABASE_URL at localhost:5433 instead of db:5432
+cp .env.example .env             # same POSTGRES_* credentials, but @localhost:5433
 npm install
 npx prisma migrate deploy
-npm run start:dev    # http://localhost:3001
+npm run dev                      # http://localhost:3001
 
 # 3. Frontend (new terminal)
 cd frontend-web
+cp .env.local.example .env.local # optional: defaults already target :3001
 npm install
-npm run dev          # http://localhost:3000
+npm run dev                      # http://localhost:3000
 ```
+
+| | Docker (root `.env`) | Local (`backend/.env`) |
+|---|---|---|
+| `DATABASE_URL` host | `db:5432` | `localhost:5433` |
+| `BETTER_AUTH_URL` | `http://localhost` (Nginx) | `http://localhost:3001` |
+| Browser → backend | `http://localhost/api` via Nginx | `http://localhost:3001` direct |
 
 ### Environment variables
 
@@ -204,7 +199,7 @@ npm run dev          # http://localhost:3000
 | `DATABASE_URL` | yes | Prisma connection string |
 | `BETTER_AUTH_DATABASE_URL` | yes | Auth DB (same database, without `?schema=public`) |
 | `BETTER_AUTH_SECRET` | yes | Session signing secret |
-| `BETTER_AUTH_URL` | yes | Public URL of the API (`http://localhost:3001`) |
+| `BETTER_AUTH_URL` | yes | Public URL of the API (see table above) |
 | `ALLOWED_ORIGINS` | yes | CORS allowlist |
 | `PORT` | no | API port (default `3001`) |
 | `SMTP_*` | no | Email (password reset) |
