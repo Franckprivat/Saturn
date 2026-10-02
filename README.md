@@ -13,7 +13,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
-**[Live demo](#)** · _[À COMPLÉTER : lien de la démo en ligne]_ · **[Screenshots](#screenshots)**
+**[Screenshots](#screenshots)** · **[Source](https://github.com/Franckprivat/Saturn)**
 
 </div>
 
@@ -31,13 +31,13 @@ It combines the **1-to-1 / group messaging** of WhatsApp with the **server / cha
 
 ## Screenshots
 
-> _[À COMPLÉTER : remplace les liens ci-dessous par tes captures (range-les dans un dossier `docs/`). Un GIF de la messagerie en temps réel = énorme impact.]_
-
 | Real-time chat | Communities |
 |:---:|:---:|
-| ![Chat](docs/chat.png) | ![Communities](docs/communities.png) |
-| **Video call** | **Profile & themes** |
-| ![Call](docs/call.png) | ![Profile](docs/profile.png) |
+| ![Direct messages with reactions and read receipts](docs/chat.png) | ![Community with text and voice channels and member roles](docs/communities.png) |
+| **Profile & QR code** | |
+| ![Profile with bio and shareable QR code](docs/profile.png) | |
+
+<!-- TODO: ajouter docs/call.png (appel vidéo) -->
 
 ---
 
@@ -46,7 +46,7 @@ It combines the **1-to-1 / group messaging** of WhatsApp with the **server / cha
 ### Messaging
 - **Real-time** 1-to-1 and group conversations over WebSockets (Socket.IO)
 - **Typing indicators**, message **reactions**, and WhatsApp-style **read receipts** (sent / delivered / read)
-- **Pinned messages**, replies and **file / image attachments**
+- **Pinned messages**, replies and **file / image attachments** (JPEG, PNG, GIF, WebP, MP4, WebM, OGG, MP3, M4A, PDF, plain text, checked on actual content)
 - Persistent history backed by PostgreSQL
 
 ### Social
@@ -133,41 +133,81 @@ Saturn/
 
 ## Getting Started
 
-### Option A — Docker (recommended)
+**Prerequisites:** Node.js 20+, npm, Docker & Docker Compose.
 
 ```bash
-# 1. Clone
-git clone [À COMPLÉTER : url-du-repo] saturn
+git clone https://github.com/Franckprivat/Saturn.git saturn
 cd saturn
-
-# 2. Configure environment
-cp .env.example .env
-#   -> fill POSTGRES_USER / POSTGRES_PASSWORD / DATABASE_URL
-#   -> generate a secret:
-#      node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
-
-# 3. Launch everything (db + backend + frontend + nginx)
-docker compose up -d --build
 ```
 
-App available at **http://localhost** (Nginx) — frontend on `:3000`, API on `:3001`.
-
-### Option B — Run locally
+Generate a session secret for `BETTER_AUTH_SECRET` with:
 
 ```bash
-# Database only
-docker compose up -d db
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+```
 
-# Backend
+### Option A — Docker Compose (recommended)
+
+Uses **one env file: `.env` at the repo root**. Compose reads it for the Postgres credentials and passes it to the `backend` and `frontend-web` containers.
+
+```bash
+cp .env.example .env
+#   -> set POSTGRES_USER / POSTGRES_PASSWORD, the same values in DATABASE_URL
+#      and BETTER_AUTH_DATABASE_URL (host stays `db:5432`), and BETTER_AUTH_SECRET
+
+docker compose up -d --build   # db + backend + frontend + nginx
+```
+
+The app is at **http://localhost**. The browser only talks to Nginx, which routes `/api`, `/api/auth`, `/uploads` and `/socket.io` to the backend and everything else to Next.js.
+
+Stop with `docker compose down` (add `-v` to wipe the database).
+
+### Option B — Run locally (hot reload)
+
+Postgres still runs in Docker; the API and frontend run on your machine.
+
+```bash
+# 1. Database only (needs the root .env from Option A for POSTGRES_*)
+cp .env.example .env
+docker compose up -d db          # exposed on localhost:5433
+
+# 2. Backend
 cd backend
+cp .env.example .env             # same POSTGRES_* credentials, but @localhost:5433
 npm install
 npx prisma migrate deploy
-npm run dev          # http://localhost:3001
+npm run dev                      # http://localhost:3001
 
-# Frontend (new terminal)
+# 3. Frontend (new terminal)
 cd frontend-web
+cp .env.local.example .env.local # optional: defaults already target :3001
 npm install
-npm run dev          # http://localhost:3000
+npm run dev                      # http://localhost:3000
+```
+
+| | Docker (root `.env`) | Local (`backend/.env`) |
+|---|---|---|
+| `DATABASE_URL` host | `db:5432` | `localhost:5433` |
+| `BETTER_AUTH_URL` | `http://localhost` (Nginx) | `http://localhost:3001` |
+| Browser → backend | `http://localhost/api` via Nginx | `http://localhost:3001` direct |
+
+### Demo account
+
+To try Saturn without signing up, click **"Try the demo account"** on the landing or login page.
+
+| Email | Password |
+|---|---|
+| `demo@example.com` | `saturn-demo` |
+
+The account already has friends, conversations, a group and a community. It is shared, so changing its password or email and deleting it are blocked, and its sample data is restored every time the backend restarts.
+
+Enable it in the backend env file:
+
+```env
+DEMO_ACCOUNT_ENABLED=true
+# Optional
+DEMO_ACCOUNT_EMAIL=demo@example.com
+DEMO_ACCOUNT_PASSWORD=saturn-demo
 ```
 
 ### Environment variables
@@ -176,11 +216,21 @@ npm run dev          # http://localhost:3000
 |----------|:--------:|-------------|
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | yes | Postgres credentials |
 | `DATABASE_URL` | yes | Prisma connection string |
-| `BETTER_AUTH_DATABASE_URL` | yes | Auth DB (same database) |
+| `BETTER_AUTH_DATABASE_URL` | yes | Auth DB (same database, without `?schema=public`) |
 | `BETTER_AUTH_SECRET` | yes | Session signing secret |
+| `BETTER_AUTH_URL` | yes | Public URL of the API (see table above) |
 | `ALLOWED_ORIGINS` | yes | CORS allowlist |
-| `SMTP_*` | no | Email (password reset) |
-| `R2_*` | no | Cloudflare R2 file storage |
+| `PORT` | no | API port (default `3001`) |
+| `SMTP_*` | no | Email (password reset). Without `SMTP_USER`, reset links are not sent and the backend logs a warning |
+| `R2_*` | no | Cloudflare R2 file storage (falls back to local disk) |
+| `TRUST_PROXY` | no | Express `trust proxy` value. Default `loopback, linklocal, uniquelocal` (Nginx in the Docker network); e.g. `1` behind a single load balancer |
+| `DEMO_ACCOUNT_ENABLED` / `DEMO_ACCOUNT_EMAIL` / `DEMO_ACCOUNT_PASSWORD` | no | Shared demo account (see above) |
+| `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_AUTH_URL` | no | Frontend → API URLs (set by Compose; default `http://localhost:3001`) |
+
+### Production notes
+
+- Keep the backend port (`3001`) private and expose only Nginx. Auth rate limiting reads the client IP from the `X-Real-IP` header set by Nginx.
+- Migrations run on container start; outside Docker, run `npx prisma migrate deploy` after pulling.
 
 ---
 
@@ -218,10 +268,12 @@ CI runs lint + tests on every push via GitHub Actions.
 
 ## Author
 
-**[À COMPLÉTER : Prénom Nom]** — _Looking for a work-study (alternance) in software development._
+**Franck** <!-- TODO: nom complet --> — _Looking for a work-study (alternance) in software development._
 
-[![GitHub](https://img.shields.io/badge/GitHub-181717?logo=github&logoColor=white)](https://github.com/[À-COMPLÉTER])
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?logo=linkedin&logoColor=white)](https://linkedin.com/in/[À-COMPLÉTER])
+[![GitHub](https://img.shields.io/badge/GitHub-181717?logo=github&logoColor=white)](https://github.com/Franckprivat)
+<!-- TODO: badge LinkedIn
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?logo=linkedin&logoColor=white)](https://linkedin.com/in/TON-PROFIL)
+-->
 
 ---
 
