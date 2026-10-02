@@ -13,7 +13,7 @@
 [![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
-**[Live demo](#)** · _[À COMPLÉTER : lien de la démo en ligne]_ · **[Screenshots](#screenshots)**
+**[Live demo](#)** <!-- TODO: lien de la démo en ligne --> · **[Screenshots](#screenshots)** · **[Source](https://github.com/Franckprivat/Saturn)**
 
 </div>
 
@@ -31,7 +31,7 @@ It combines the **1-to-1 / group messaging** of WhatsApp with the **server / cha
 
 ## Screenshots
 
-> _[À COMPLÉTER : remplace les liens ci-dessous par tes captures (range-les dans un dossier `docs/`). Un GIF de la messagerie en temps réel = énorme impact.]_
+<!-- TODO: ajouter les captures dans docs/ (chat.png, communities.png, call.png, profile.png). -->
 
 | Real-time chat | Communities |
 |:---:|:---:|
@@ -133,38 +133,64 @@ Saturn/
 
 ## Getting Started
 
-### Option A — Docker (recommended)
+**Prerequisites:** Node.js 20+, npm, Docker & Docker Compose.
 
 ```bash
-# 1. Clone
-git clone [À COMPLÉTER : url-du-repo] saturn
+git clone https://github.com/Franckprivat/Saturn.git saturn
 cd saturn
-
-# 2. Configure environment
-cp .env.example .env
-#   -> fill POSTGRES_USER / POSTGRES_PASSWORD / DATABASE_URL
-#   -> generate a secret:
-#      node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
-
-# 3. Launch everything (db + backend + frontend + nginx)
-docker compose up -d --build
 ```
 
-App available at **http://localhost** (Nginx) — frontend on `:3000`, API on `:3001`.
-
-### Option B — Run locally
+Generate a session secret for `BETTER_AUTH_SECRET` with:
 
 ```bash
-# Database only
+node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
+```
+
+### Option A — Docker Compose (recommended)
+
+Uses **one env file: `.env` at the repo root**. Compose reads it for the Postgres credentials and passes it to the `backend` and `frontend-web` containers.
+
+```bash
+cp .env.example .env
+#   -> set POSTGRES_USER / POSTGRES_PASSWORD, the same values in DATABASE_URL
+#      and BETTER_AUTH_DATABASE_URL (host stays `db:5432`), and BETTER_AUTH_SECRET
+
+docker compose up -d --build   # db + backend + frontend + nginx
+```
+
+| URL | Service |
+|-----|---------|
+| http://localhost | App through Nginx (use this one) |
+| http://localhost:3000 | Next.js directly |
+| http://localhost:3001 | NestJS API directly |
+
+Postgres is exposed on `127.0.0.1:5433` for local tools. Stop with `docker compose down` (add `-v` to wipe the database).
+
+### Option B — Run locally (hot reload, no containers for the apps)
+
+Postgres still runs in Docker; the API and frontend run on your machine.
+
+| Env file | Read by | Notes |
+|----------|---------|-------|
+| `.env` (repo root) | `docker compose` (db service) | Postgres user / password / db name |
+| `backend/.env` | NestJS + Prisma (`dotenv`) | Same keys as `.env.example`, but the DB host is **`localhost:5433`**, not `db:5432` |
+| `frontend-web/.env.local` | Next.js | Optional — defaults to the API on `http://localhost:3001` |
+
+```bash
+# 1. Database only (uses the root .env)
+cp .env.example .env
 docker compose up -d db
 
-# Backend
+# 2. Backend
 cd backend
+cp ../.env.example .env
+#   -> same credentials as the root .env, but point DATABASE_URL and
+#      BETTER_AUTH_DATABASE_URL at localhost:5433 instead of db:5432
 npm install
 npx prisma migrate deploy
-npm run dev          # http://localhost:3001
+npm run start:dev    # http://localhost:3001
 
-# Frontend (new terminal)
+# 3. Frontend (new terminal)
 cd frontend-web
 npm install
 npm run dev          # http://localhost:3000
@@ -176,11 +202,14 @@ npm run dev          # http://localhost:3000
 |----------|:--------:|-------------|
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | yes | Postgres credentials |
 | `DATABASE_URL` | yes | Prisma connection string |
-| `BETTER_AUTH_DATABASE_URL` | yes | Auth DB (same database) |
+| `BETTER_AUTH_DATABASE_URL` | yes | Auth DB (same database, without `?schema=public`) |
 | `BETTER_AUTH_SECRET` | yes | Session signing secret |
+| `BETTER_AUTH_URL` | yes | Public URL of the API (`http://localhost:3001`) |
 | `ALLOWED_ORIGINS` | yes | CORS allowlist |
+| `PORT` | no | API port (default `3001`) |
 | `SMTP_*` | no | Email (password reset) |
-| `R2_*` | no | Cloudflare R2 file storage |
+| `R2_*` | no | Cloudflare R2 file storage (falls back to local disk) |
+| `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_AUTH_URL` | no | Frontend → API URLs (set by Compose; default `http://localhost:3001`) |
 
 ---
 
@@ -218,10 +247,12 @@ CI runs lint + tests on every push via GitHub Actions.
 
 ## Author
 
-**[À COMPLÉTER : Prénom Nom]** — _Looking for a work-study (alternance) in software development._
+**Franck** <!-- TODO: nom complet --> — _Looking for a work-study (alternance) in software development._
 
-[![GitHub](https://img.shields.io/badge/GitHub-181717?logo=github&logoColor=white)](https://github.com/[À-COMPLÉTER])
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?logo=linkedin&logoColor=white)](https://linkedin.com/in/[À-COMPLÉTER])
+[![GitHub](https://img.shields.io/badge/GitHub-181717?logo=github&logoColor=white)](https://github.com/Franckprivat)
+<!-- TODO: badge LinkedIn
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?logo=linkedin&logoColor=white)](https://linkedin.com/in/TON-PROFIL)
+-->
 
 ---
 
