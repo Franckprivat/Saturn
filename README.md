@@ -46,7 +46,7 @@ It combines the **1-to-1 / group messaging** of WhatsApp with the **server / cha
 ### Messaging
 - **Real-time** 1-to-1 and group conversations over WebSockets (Socket.IO)
 - **Typing indicators**, message **reactions**, and WhatsApp-style **read receipts** (sent / delivered / read)
-- **Pinned messages**, replies and **file / image attachments**
+- **Pinned messages**, replies and **file / image attachments** (JPEG, PNG, GIF, WebP, MP4, WebM, OGG, MP3, M4A, PDF, plain text, checked on actual content)
 - Persistent history backed by PostgreSQL
 
 ### Social
@@ -191,6 +191,25 @@ npm run dev                      # http://localhost:3000
 | `BETTER_AUTH_URL` | `http://localhost` (Nginx) | `http://localhost:3001` |
 | Browser → backend | `http://localhost/api` via Nginx | `http://localhost:3001` direct |
 
+### Demo account
+
+To try Saturn without signing up, click **"Try the demo account"** on the landing or login page.
+
+| Email | Password |
+|---|---|
+| `demo@example.com` | `saturn-demo` |
+
+The account already has friends, conversations, a group and a community. It is shared, so changing its password or email and deleting it are blocked, and its sample data is restored every time the backend restarts.
+
+Enable it in the backend env file:
+
+```env
+DEMO_ACCOUNT_ENABLED=true
+# Optional
+DEMO_ACCOUNT_EMAIL=demo@example.com
+DEMO_ACCOUNT_PASSWORD=saturn-demo
+```
+
 ### Environment variables
 
 | Variable | Required | Description |
@@ -202,9 +221,16 @@ npm run dev                      # http://localhost:3000
 | `BETTER_AUTH_URL` | yes | Public URL of the API (see table above) |
 | `ALLOWED_ORIGINS` | yes | CORS allowlist |
 | `PORT` | no | API port (default `3001`) |
-| `SMTP_*` | no | Email (password reset) |
+| `SMTP_*` | no | Email (password reset). Without `SMTP_USER`, reset links are not sent and the backend logs a warning |
 | `R2_*` | no | Cloudflare R2 file storage (falls back to local disk) |
+| `TRUST_PROXY` | no | Express `trust proxy` value. Default `loopback, linklocal, uniquelocal` (Nginx in the Docker network); e.g. `1` behind a single load balancer |
+| `DEMO_ACCOUNT_ENABLED` / `DEMO_ACCOUNT_EMAIL` / `DEMO_ACCOUNT_PASSWORD` | no | Shared demo account (see above) |
 | `NEXT_PUBLIC_API_URL` / `NEXT_PUBLIC_AUTH_URL` | no | Frontend → API URLs (set by Compose; default `http://localhost:3001`) |
+
+### Production notes
+
+- Keep the backend port (`3001`) private and expose only Nginx. Auth rate limiting reads the client IP from the `X-Real-IP` header set by Nginx.
+- Migrations run on container start; outside Docker, run `npx prisma migrate deploy` after pulling.
 
 ---
 
