@@ -8,6 +8,7 @@ import { Avatar } from '@/components/Avatar';
 import { Spinner } from '@/components/Spinner';
 import { useBadgeStore } from '@/store/badgeStore';
 import { usePresenceStore, formatLastSeen } from '@/store/presenceStore';
+import { apiErrorMessage } from '@/lib/errors';
 
 type FriendUser = { id: string; nickname: string; image?: string | null; avatarColor?: string | null; bio?: string | null; lastSeenAt?: string | null };
 type FriendRequest = {
@@ -58,7 +59,7 @@ function UserCard({ user, right, sub, subColor, online }: {
 
 export default function FriendsPage() {
   const router = useRouter();
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
   const [tab, setTab] = useState<Tab>('friends');
   const [friends, setFriends] = useState<FriendUser[]>([]);
   const [requests, setRequests] = useState<FriendRequest[]>([]);
@@ -91,14 +92,14 @@ export default function FriendsPage() {
   const fetchFriends = async () => {
     setLoadingFriends(true);
     try { const res = await api.get('/friends'); setFriends(res.data); }
-    catch (err: any) { setError(err?.response?.data?.message || 'Erreur'); }
+    catch (err) { setError(apiErrorMessage(err, 'Erreur')); }
     finally { setLoadingFriends(false); }
   };
 
   const fetchRequests = async () => {
     setLoadingRequests(true);
     try { const res = await api.get('/friends/requests'); setRequests(res.data); }
-    catch (err: any) { setError(err?.response?.data?.message || 'Erreur'); }
+    catch (err) { setError(apiErrorMessage(err, 'Erreur')); }
     finally { setLoadingRequests(false); }
     // Le badge de la sidebar suit le nombre de demandes en attente
     useBadgeStore.getState().refreshFriendRequests();
@@ -108,7 +109,7 @@ export default function FriendsPage() {
     if (!search.trim()) return setSearchResults([]);
     setLoadingSearch(true);
     try { const res = await api.get('/friends/search', { params: { q: search } }); setSearchResults(res.data); }
-    catch (err: any) { setError(err?.response?.data?.message || 'Erreur'); }
+    catch (err) { setError(apiErrorMessage(err, 'Erreur')); }
     finally { setLoadingSearch(false); }
   };
 
@@ -117,7 +118,7 @@ export default function FriendsPage() {
       await api.post('/friends/requests', { addresseeId: userId });
       setSentRequests((prev) => new Set([...prev, userId]));
       await fetchRequests();
-    } catch (err: any) { setError(err?.response?.data?.message || 'Erreur'); }
+    } catch (err) { setError(apiErrorMessage(err, 'Erreur')); }
   };
 
   const handleRespond = async (id: string, accept: boolean) => {
@@ -125,14 +126,14 @@ export default function FriendsPage() {
       await api.post(`/friends/requests/${id}/${accept ? 'accept' : 'decline'}`);
       await fetchFriends();
       await fetchRequests();
-    } catch (err: any) { setError(err?.response?.data?.message || 'Erreur'); }
+    } catch (err) { setError(apiErrorMessage(err, 'Erreur')); }
   };
 
   const handleOpenDm = async (userId: string) => {
     try {
       const res = await api.post('/conversations/dm', { userId });
       router.push(`/chat?conversationId=${res.data.id}`);
-    } catch (err: any) { setError(err?.response?.data?.message || 'Erreur'); }
+    } catch (err) { setError(apiErrorMessage(err, 'Erreur')); }
   };
 
   const handleBlock = async (userId: string) => {
@@ -140,7 +141,7 @@ export default function FriendsPage() {
     try {
       await api.post(`/friends/block/${userId}`);
       setFriends((prev) => prev.filter((f) => f.id !== userId));
-    } catch (err: any) { setError(err?.response?.data?.message || 'Erreur'); }
+    } catch (err) { setError(apiErrorMessage(err, 'Erreur')); }
   };
 
   const handleRemoveFriend = async (userId: string) => {
@@ -149,7 +150,7 @@ export default function FriendsPage() {
       await api.delete(`/friends/${userId}`);
       setFriends((prev) => prev.filter((f) => f.id !== userId));
       await fetchRequests();
-    } catch (err: any) { setError(err?.response?.data?.message || 'Erreur'); }
+    } catch (err) { setError(apiErrorMessage(err, 'Erreur')); }
   };
 
   const isIncoming = (r: FriendRequest) => r.addressee.id === currentUser?.id;
@@ -225,7 +226,7 @@ export default function FriendsPage() {
                   <svg className="mx-auto opacity-30" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--sat-muted)' }}>
                     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
                   </svg>
-                  <p className="text-xs" style={{ color: 'var(--sat-muted)' }}>Aucun ami pour le moment.<br />Utilise "Ajouter un ami" pour en trouver.</p>
+                  <p className="text-xs" style={{ color: 'var(--sat-muted)' }}>Aucun ami pour le moment.<br />Utilise &quot;Ajouter un ami&quot; pour en trouver.</p>
                 </div>
               )}
               {friends.map((f) => (

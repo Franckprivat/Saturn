@@ -40,10 +40,10 @@ export function getConvPrefs(userId: string, conversationId: string): ConvPrefs 
 
 export function setConvPrefs(userId: string, conversationId: string, patch: Partial<ConvPrefs>) {
   if (typeof window === 'undefined') return;
-  const next: ConvPrefs = { ...getConvPrefs(userId, conversationId) };
+  const next: Record<string, unknown> = { ...getConvPrefs(userId, conversationId) };
   for (const [k, v] of Object.entries(patch)) {
-    if (v === undefined) delete (next as any)[k];
-    else (next as any)[k] = v;
+    if (v === undefined) delete next[k];
+    else next[k] = v;
   }
   if (Object.keys(next).length === 0) localStorage.removeItem(key(userId, conversationId));
   else localStorage.setItem(key(userId, conversationId), JSON.stringify(next));

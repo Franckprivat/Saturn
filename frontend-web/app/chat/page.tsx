@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { authClient } from '@/lib/auth-client';
-import { useChatStore } from '@/store/chatStore';
+import { useChatStore, type ChatMessage, type ChatUser, type Conversation, type MessageReaction } from '@/store/chatStore';
 import { usePresenceStore, formatLastSeen } from '@/store/presenceStore';
 import { useChatSocket } from '@/hooks/useChatSocket';
 import { api } from '@/lib/api';
@@ -50,7 +50,17 @@ function setLocalAlias(myId: string, otherId: string, name: string) {
   else localStorage.removeItem(`saturn_alias_${myId}_${otherId}`);
 }
 
-function CommunityInviteCard({ msg }: { msg: any }) {
+type GroupPanelProps = React.ComponentProps<typeof GroupPanel>;
+interface GroupDetail {
+  name?: string | null;
+  description?: string | null;
+  image?: string | null;
+  creatorId?: string | null;
+  participants: GroupPanelProps['participants'];
+  messages?: GroupPanelProps['attachments'];
+}
+
+function CommunityInviteCard({ msg }: { msg: ChatMessage }) {
   const router = useRouter();
   const meta = msg.metadata as { communityId: string; communityName: string; communityImage?: string | null; token?: string | null } | null;
   const [status, setStatus] = useState<'idle' | 'joining' | 'joined' | 'refused'>('idle');
@@ -107,7 +117,7 @@ function CommunityInviteCard({ msg }: { msg: any }) {
 
 function ChatPageContent() {
   const searchParams = useSearchParams();
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
   const {
     conversations, messagesByConversationId, paginationByConversationId, currentConversationId, unreadCounts,
     setConversations, setCurrentConversationId, setMessages, prependMessages,
@@ -130,7 +140,7 @@ function ChatPageContent() {
   // UI state
   const [showEmoji, setShowEmoji] = useState(false);
   const [showGroupPanel, setShowGroupPanel] = useState(false);
-  const [groupDetail, setGroupDetail] = useState<any>(null);
+  const [groupDetail, setGroupDetail] = useState<GroupDetail | null>(null);
 
   // Typing
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({}); // userId -> nickname
@@ -140,7 +150,7 @@ function ChatPageContent() {
   const [whisperTargets, setWhisperTargets] = useState<string[]>([]);
 
   // Réponse / édition / réactions (parité avec les salons de communauté)
-  const [replyTo, setReplyTo] = useState<any | null>(null);
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [reactionPicker, setReactionPicker] = useState<string | null>(null);
@@ -152,7 +162,7 @@ function ChatPageContent() {
 
   // Sidebar groupe
   const [sidebarGroupOpen, setSidebarGroupOpen] = useState(false);
-  const [friends, setFriends] = useState<any[]>([]);
+  const [friends, setFriends] = useState<ChatUser[]>([]);
   const [groupName, setGroupName] = useState('');
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [creatingGroup, setCreatingGroup] = useState(false);
@@ -231,7 +241,7 @@ function ChatPageContent() {
   // Le store est alimenté par le pont global (AppShell) — ici, uniquement l'UX locale
   useEffect(() => {
     if (!socket) return;
-    const handler = (msg: any) => {
+    const handler = (msg: ChatMessage) => {
       // Effacer typing quand le message arrive
       setTypingUsers((prev) => { const n = { ...prev }; delete n[msg.sender?.id]; return n; });
       // Message reçu pendant qu'on lit la conversation → lu immédiatement
@@ -242,7 +252,7 @@ function ChatPageContent() {
     socket.on('new_message', handler);
 
     // Typing events
-    const typingHandler = ({ userId, conversationId }: any) => {
+    const typingHandler = ({ userId, conversationId }: { userId: string; conversationId: string }) => {
       if (conversationId !== currentConversationId) return;
       const conv = useChatStore.getState().conversations.find((c) => c.id === conversationId);
       const member = conv?.participants.find((p) => p.user.id === userId)?.user;
@@ -250,7 +260,7 @@ function ChatPageContent() {
         setTypingUsers((prev) => ({ ...prev, [userId]: member.nickname || member.email || '...' }));
       }
     };
-    const stopTypingHandler = ({ userId }: any) => {
+    const stopTypingHandler = ({ userId }: { userId: string }) => {
       setTypingUsers((prev) => { const n = { ...prev }; delete n[userId]; return n; });
     };
     socket.on('user_typing', typingHandler);
@@ -312,12 +322,12 @@ function ChatPageContent() {
   const currentConv = conversations.find((c) => c.id === currentConversationId);
 
   const getOtherUser = useCallback(
-    (conv: any) => conv.type === 'GROUP' ? null : conv.participants.find((p: any) => p.user.id !== currentUser?.id)?.user || null,
+    (conv: Conversation) => conv.type === 'GROUP' ? null : conv.participants.find((p) => p.user.id !== currentUser?.id)?.user || null,
     [currentUser],
   );
 
   const getTitle = useCallback(
-    (conv: any) => {
+    (conv: Conversation) => {
       if (conv.type === 'GROUP') return conv.name || 'Groupe';
       const other = getOtherUser(conv);
       return other ? (aliasMap[other.id] || other.nickname || other.email) : 'Conversation';
@@ -326,13 +336,13 @@ function ChatPageContent() {
   );
 
   // ── AI suggestions ──
-  const fetchAiSuggestions = async (lastMsg: any) => {
+  const fetchAiSuggestions = async (lastMsg: ChatMessage) => {
     if (!currentConversationId) return;
     setLoadingAi(true);
     setAiSuggestions([]);
     try {
       const msgs = (messagesByConversationId[currentConversationId] ?? []).slice(-5);
-      const formatted = msgs.map((m: any) => ({
+      const formatted = msgs.map((m) => ({
         role: m.sender.id === currentUser?.id ? 'assistant' : 'user',
         content: m.content,
       }));
@@ -452,7 +462,7 @@ function ChatPageContent() {
   };
 
   // ── Suppression : pour moi (masquage local) / pour tous (serveur) ──
-  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -665,7 +675,7 @@ function ChatPageContent() {
                   {conv.type === 'GROUP'
                     ? <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0"
                         style={{ background: 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
-                        {(conv as any).image ? <img src={mediaUrl((conv as any).image)} loading="lazy" className="w-full h-full object-cover" alt="" /> : title.charAt(0).toUpperCase()}
+                        {conv.image ? <img src={mediaUrl(conv.image)} loading="lazy" className="w-full h-full object-cover" alt="" /> : title.charAt(0).toUpperCase()}
                       </div>
                     : <Avatar user={otherUser || {}} size="xs" className="w-8 h-8 flex-shrink-0" />}
                   {/* Status dot */}
@@ -732,7 +742,7 @@ function ChatPageContent() {
                       {currentConv.type === 'GROUP'
                         ? <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold overflow-hidden"
                             style={{ background: 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
-                            {(currentConv as any).image ? <img src={mediaUrl((currentConv as any).image)} className="w-full h-full object-cover" alt="" /> : getTitle(currentConv).charAt(0).toUpperCase()}
+                            {currentConv.image ? <img src={mediaUrl(currentConv.image)} className="w-full h-full object-cover" alt="" /> : getTitle(currentConv).charAt(0).toUpperCase()}
                           </div>
                         : <Avatar user={otherUser || {}} size="xs" className="w-7 h-7" />}
                       {currentConv.type === 'DM' && (
@@ -752,7 +762,7 @@ function ChatPageContent() {
                           ? `— ${currentConv.participants.length} membres`
                           : online
                             ? '— En ligne'
-                            : `— ${formatLastSeen(lastSeenById[otherUser?.id ?? ''] ?? (otherUser as any)?.lastSeenAt) ?? 'Hors ligne'}`}
+                            : `— ${formatLastSeen(lastSeenById[otherUser?.id ?? ''] ?? otherUser?.lastSeenAt) ?? 'Hors ligne'}`}
                       </span>
                     </div>
 
@@ -761,7 +771,7 @@ function ChatPageContent() {
                       <WallpaperPicker value={wallpaper} onChange={setWallpaper} />
                       {currentConv.type === 'DM' && (() => {
                         const peerName = getTitle(currentConv);
-                        const peerImage = otherUser?.image;
+                        const peerImage = otherUser?.image ?? undefined;
                         const launch = (callType: 'audio' | 'video') => {
                           if (!currentConv) return;
                           startCall({ conversationId: currentConv.id, callType, peerName, peerImage });
@@ -842,7 +852,7 @@ function ChatPageContent() {
                 </div>
               )}
 
-              {currentMessages.filter((m: any) => !hiddenIds.has(m.id)).map((msg: any, i: number, visibleMessages: any[]) => {
+              {currentMessages.filter((m) => !hiddenIds.has(m.id)).map((msg, i, visibleMessages) => {
                 // Messages système (création du groupe, membres ajoutés, etc.)
                 if (msg.type === 'SYSTEM') {
                   return (
@@ -859,22 +869,22 @@ function ChatPageContent() {
                 const isMe = msg.sender.id === currentUser?.id;
                 const isDeleted = !!msg.deletedAt;
                 const isEditing = editingId === msg.id;
-                const prevMsg = visibleMessages[i - 1] as any;
-                const nextMsg = visibleMessages[i + 1] as any;
+                const prevMsg = visibleMessages[i - 1] as ChatMessage | undefined;
+                const nextMsg = visibleMessages[i + 1] as ChatMessage | undefined;
                 const samePrev = prevMsg?.type !== 'SYSTEM' && prevMsg?.sender.id === msg.sender.id && new Date(msg.createdAt).getTime() - new Date(prevMsg.createdAt).getTime() < 300000;
                 const sameNext = nextMsg?.type !== 'SYSTEM' && nextMsg?.sender.id === msg.sender.id && new Date(nextMsg.createdAt).getTime() - new Date(msg.createdAt).getTime() < 300000;
 
                 // Statuts réels façon WhatsApp :
                 // ✓ envoyé → ✓✓ gris distribué (arrivé chez tous) → ✓✓ accent lu (par tous)
-                const others = currentConv?.participants.filter((p: any) => p.user.id !== currentUser?.id) ?? [];
-                const readers = new Set((msg.readBy ?? []).map((r: any) => r.userId));
-                const receivers = new Set((msg.deliveredTo ?? []).map((d: any) => d.userId));
-                const readByAll = others.length > 0 && others.every((o: any) => readers.has(o.user.id));
+                const others = currentConv?.participants.filter((p) => p.user.id !== currentUser?.id) ?? [];
+                const readers = new Set((msg.readBy ?? []).map((r) => r.userId));
+                const receivers = new Set((msg.deliveredTo ?? []).map((d) => d.userId));
+                const readByAll = others.length > 0 && others.every((o) => readers.has(o.user.id));
                 const deliveredToAll = others.length > 0 &&
-                  others.every((o: any) => receivers.has(o.user.id) || readers.has(o.user.id));
+                  others.every((o) => receivers.has(o.user.id) || readers.has(o.user.id));
 
                 // Regroupement des réactions par emoji
-                const reactionGroups: Record<string, any[]> = {};
+                const reactionGroups: Record<string, MessageReaction[]> = {};
                 for (const r of (msg.reactions || [])) { (reactionGroups[r.emoji] ??= []).push(r); }
 
                 return (
@@ -1026,7 +1036,7 @@ function ChatPageContent() {
                       {Object.keys(reactionGroups).length > 0 && !isDeleted && (
                         <div className={cx('flex flex-wrap gap-1 mt-1', isMe ? 'justify-end' : 'justify-start')}>
                           {Object.entries(reactionGroups).map(([emoji, users]) => {
-                            const mine = users.some((u: any) => u.userId === currentUser?.id);
+                            const mine = users.some((u) => u.userId === currentUser?.id);
                             return (
                               <button key={emoji} onClick={() => toggleReaction(msg.id, emoji)}
                                 className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition"
@@ -1034,7 +1044,7 @@ function ChatPageContent() {
                                   background: mine ? 'rgba(160,22,217,0.12)' : 'var(--sat-hover)',
                                   border: `1px solid ${mine ? 'var(--sat-accent)' : 'var(--sat-border)'}`,
                                 }}
-                                title={users.map((u: any) => u.user?.nickname || u.user?.email || '').join(', ')}>
+                                title={users.map((u) => u.user?.nickname || u.user?.email || '').join(', ')}>
                                 {emoji} <span style={{ color: mine ? 'var(--sat-accent)' : 'var(--sat-muted)', fontWeight: 600 }}>{users.length}</span>
                               </button>
                             );
@@ -1085,7 +1095,7 @@ function ChatPageContent() {
               {currentConv?.type === 'GROUP' && whisperMode && (
                 <div className="flex flex-wrap gap-1.5 px-1 mb-2">
                   <span className="text-[11px] font-bold" style={{ color: 'var(--sat-accent)' }}>Visible par :</span>
-                  {currentConv.participants.filter((p: any) => p.user.id !== currentUser?.id).map((p: any) => (
+                  {currentConv.participants.filter((p) => p.user.id !== currentUser?.id).map((p) => (
                     <button key={p.user.id}
                       onClick={() => setWhisperTargets((prev) => prev.includes(p.user.id) ? prev.filter((x) => x !== p.user.id) : [...prev, p.user.id])}
                       className="px-2 py-0.5 rounded-full text-[11px] font-medium transition"
@@ -1199,7 +1209,7 @@ function ChatPageContent() {
                   {currentConv?.type === 'GROUP' && (
                     <button title="Mentionner"
                       onClick={() => {
-                        const nick = currentConv.participants.find((p: any) => p.user.id !== currentUser?.id)?.user?.nickname;
+                        const nick = currentConv.participants.find((p) => p.user.id !== currentUser?.id)?.user?.nickname;
                         if (nick) insertMention(nick);
                       }}
                       className="w-8 h-8 flex items-center justify-center rounded transition text-sm font-bold"
