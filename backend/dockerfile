@@ -11,6 +11,9 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
+# Mode production (rate limit better-auth, cookies, logs Nest)
+ENV NODE_ENV=production
+
 # Non-root pour la sécurité
 USER node
 EXPOSE 3000

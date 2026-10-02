@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 const SENDER_SELECT = {
@@ -26,6 +31,71 @@ const MESSAGE_INCLUDE = {
   },
 };
 
+/**
+ * Filtre Prisma des messages visibles par `userId` : les chuchotements ne sont
+ * visibles que par leur auteur et leurs destinataires.
+ */
+export function visibleTo(userId: string) {
+  return {
+    OR: [
+      { isWhisper: false },
+      { senderId: userId },
+      { whisperTo: { has: userId } },
+    ],
+  };
+}
+
+/** True si `userId` fait partie de l'audience du message. */
+export function canSeeMessage(
+  msg: { isWhisper: boolean; senderId: string; whisperTo: string[] },
+  userId: string,
+) {
+  return (
+    !msg.isWhisper || msg.senderId === userId || msg.whisperTo.includes(userId)
+  );
+}
+
+export const MAX_MESSAGE_LENGTH = 4000;
+
+function normalizeContent(content: unknown): string {
+  const text = typeof content === 'string' ? content.trim() : '';
+  if (text.length > MAX_MESSAGE_LENGTH) {
+    throw new BadRequestException(
+      `Message trop long (${MAX_MESSAGE_LENGTH} caractères max)`,
+    );
+  }
+  return text;
+}
+
+/**
+ * Une pièce jointe doit venir de notre propre stockage (route /upload) :
+ * sinon n'importe quelle URL externe (pixel de traçage…) s'afficherait dans le chat.
+ */
+function validateAttachment(file: {
+  fileUrl: string;
+  fileName: string;
+  fileType: string;
+}) {
+  const url = typeof file.fileUrl === 'string' ? file.fileUrl.trim() : '';
+  const r2 = process.env.R2_PUBLIC_URL?.replace(/\/+$/, '');
+  const ownUpload =
+    /^\/uploads\/[\w.-]+$/.test(url) ||
+    (!!r2 &&
+      url.startsWith(`${r2}/uploads/`) &&
+      /^[\w.-]+$/.test(url.slice(r2.length + 9)));
+  if (!ownUpload) throw new BadRequestException('Pièce jointe invalide');
+  const fileType =
+    typeof file.fileType === 'string' ? file.fileType.trim().slice(0, 100) : '';
+  if (!/^[\w.+-]+\/[\w.+-]+$/.test(fileType))
+    throw new BadRequestException('Type de fichier invalide');
+  const fileName =
+    (typeof file.fileName === 'string' ? file.fileName : 'fichier').slice(
+      0,
+      255,
+    ) || 'fichier';
+  return { fileUrl: url, fileName, fileType };
+}
+
 @Injectable()
 export class MessagesService {
   constructor(private readonly prisma: PrismaService) {}
@@ -40,14 +110,51 @@ export class MessagesService {
       const member = await this.prisma.communityMember.count({
         where: { communityId: conv.communityId, userId },
       });
-      if (!member) throw new ForbiddenException('Vous ne faites pas partie de cette communauté');
+      if (!member)
+        throw new ForbiddenException(
+          'Vous ne faites pas partie de cette communauté',
+        );
       return;
     }
     // DM / groupe : vérification classique des participants
     const count = await this.prisma.conversationParticipant.count({
       where: { userId, conversationId },
     });
-    if (!count) throw new ForbiddenException('You are not a participant of this conversation');
+    if (!count)
+      throw new ForbiddenException(
+        'You are not a participant of this conversation',
+      );
+  }
+
+  /** Vérifie que tous les `userIds` ont accès à la conversation. */
+  private async ensureAllCanAccess(conversationId: string, userIds: string[]) {
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { type: true, communityId: true },
+    });
+    const count =
+      conv?.type === 'CHANNEL' && conv.communityId
+        ? await this.prisma.communityMember.count({
+            where: { communityId: conv.communityId, userId: { in: userIds } },
+          })
+        : await this.prisma.conversationParticipant.count({
+            where: { conversationId, userId: { in: userIds } },
+          });
+    if (count !== userIds.length) {
+      throw new BadRequestException('Destinataire de chuchotement invalide');
+    }
+  }
+
+  /** Message visible par `userId` (participant + audience du chuchotement). */
+  async getVisibleMessage(messageId: string, userId: string) {
+    const msg = await this.prisma.message.findUnique({
+      where: { id: messageId },
+    });
+    if (!msg) throw new NotFoundException('Message not found');
+    await this.ensureParticipant(userId, msg.conversationId);
+    if (!canSeeMessage(msg, userId))
+      throw new NotFoundException('Message not found');
+    return msg;
   }
 
   async getMessagesForConversation(
@@ -57,15 +164,19 @@ export class MessagesService {
     limit = 50,
   ) {
     await this.ensureParticipant(userId, conversationId);
+    const take = Math.min(
+      Math.max(Number.isFinite(limit) ? limit : 50, 1),
+      100,
+    );
     const messages = await this.prisma.message.findMany({
-      where: { conversationId },
+      where: { conversationId, ...visibleTo(userId) },
       orderBy: { createdAt: 'desc' },
-      take: limit + 1,
+      take: take + 1,
       ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
       include: MESSAGE_INCLUDE,
     });
-    const hasMore = messages.length > limit;
-    const items = hasMore ? messages.slice(0, limit) : messages;
+    const hasMore = messages.length > take;
+    const items = hasMore ? messages.slice(0, take) : messages;
     return {
       messages: items.reverse(),
       nextCursor: hasMore ? items[0].id : null,
@@ -81,6 +192,7 @@ export class MessagesService {
         deletedAt: null,
         type: 'MESSAGE',
         content: { contains: query, mode: 'insensitive' },
+        ...visibleTo(userId),
       },
       orderBy: { createdAt: 'desc' },
       take: 30,
@@ -106,7 +218,10 @@ export class MessagesService {
         ],
       },
     });
-    if (blocked) throw new ForbiddenException('Vous ne pouvez pas envoyer de message à cet utilisateur');
+    if (blocked)
+      throw new ForbiddenException(
+        'Vous ne pouvez pas envoyer de message à cet utilisateur',
+      );
   }
 
   async createMessage(
@@ -120,18 +235,50 @@ export class MessagesService {
     await this.ensureParticipant(userId, conversationId);
     await this.ensureNotBlocked(userId, conversationId);
 
+    content = normalizeContent(content);
+    if (file) file = validateAttachment(file);
+    if (!content && !file) throw new BadRequestException('Message vide');
+
     // Une réponse doit cibler un message de la même conversation
+    // Destinataires d'un chuchotement : uniquement des participants, sans doublon
+    const recipients = Array.isArray(whisperTo)
+      ? Array.from(
+          new Set(
+            whisperTo.filter((id) => typeof id === 'string' && id !== userId),
+          ),
+        ).slice(0, 50)
+      : [];
+    if (recipients.length) {
+      await this.ensureAllCanAccess(conversationId, recipients);
+    }
+    const isWhisper = recipients.length > 0;
+
+    // Une réponse doit cibler un message de la même conversation, visible par l'auteur
     if (replyToId) {
       const target = await this.prisma.message.findUnique({
         where: { id: replyToId },
-        select: { conversationId: true },
+        select: {
+          conversationId: true,
+          isWhisper: true,
+          senderId: true,
+          whisperTo: true,
+        },
       });
-      if (!target || target.conversationId !== conversationId) {
-        throw new NotFoundException('Message cité introuvable dans cette conversation');
+      if (
+        !target ||
+        target.conversationId !== conversationId ||
+        !canSeeMessage(target, userId)
+      ) {
+        throw new NotFoundException(
+          'Message cité introuvable dans cette conversation',
+        );
+      }
+      // Citer un chuchotement en public le révélerait à toute la conversation
+      if (target.isWhisper && !isWhisper) {
+        throw new ForbiddenException('Réponds à un chuchotement en chuchotant');
       }
     }
 
-    const isWhisper = !!(whisperTo && whisperTo.length > 0);
     return this.prisma.message.create({
       data: {
         senderId: userId,
@@ -139,7 +286,7 @@ export class MessagesService {
         content,
         ...file,
         isWhisper,
-        whisperTo: whisperTo ?? [],
+        whisperTo: recipients,
         replyToId: replyToId ?? null,
         type: 'MESSAGE',
       },
@@ -148,18 +295,31 @@ export class MessagesService {
   }
 
   async editMessage(messageId: string, userId: string, content: string) {
-    const msg = await this.prisma.message.findUnique({ where: { id: messageId } });
+    const msg = await this.prisma.message.findUnique({
+      where: { id: messageId },
+    });
     if (!msg) throw new NotFoundException('Message not found');
-    if (msg.senderId !== userId) throw new ForbiddenException('Cannot edit this message');
-    if (msg.deletedAt) throw new ForbiddenException('Cannot edit a deleted message');
+    if (msg.senderId !== userId)
+      throw new ForbiddenException('Cannot edit this message');
+    if (msg.deletedAt)
+      throw new ForbiddenException('Cannot edit a deleted message');
+    if (msg.type !== 'MESSAGE')
+      throw new ForbiddenException('Cannot edit this message');
+    await this.ensureParticipant(userId, msg.conversationId);
+    const text = normalizeContent(content);
+    if (!text && !msg.fileUrl) throw new BadRequestException('Message vide');
     return this.prisma.message.update({
       where: { id: messageId },
-      data: { content, editedAt: new Date() },
+      data: { content: text, editedAt: new Date() },
       include: MESSAGE_INCLUDE,
     });
   }
 
-  async createSystemMessage(senderId: string, conversationId: string, content: string) {
+  async createSystemMessage(
+    senderId: string,
+    conversationId: string,
+    content: string,
+  ) {
     return this.prisma.message.create({
       data: { senderId, conversationId, content, type: 'SYSTEM' },
       include: MESSAGE_INCLUDE,
@@ -169,7 +329,12 @@ export class MessagesService {
   async createCommunityInviteMessage(
     senderId: string,
     conversationId: string,
-    meta: { communityId: string; communityName: string; communityImage?: string | null; token?: string | null },
+    meta: {
+      communityId: string;
+      communityName: string;
+      communityImage?: string | null;
+      token?: string | null;
+    },
   ) {
     return this.prisma.message.create({
       data: {
@@ -213,7 +378,13 @@ export class MessagesService {
 
     return this.prisma.message.update({
       where: { id: messageId },
-      data: { deletedAt: new Date(), content: '', fileUrl: null, fileName: null, fileType: null },
+      data: {
+        deletedAt: new Date(),
+        content: '',
+        fileUrl: null,
+        fileName: null,
+        fileType: null,
+      },
       include: MESSAGE_INCLUDE,
     });
   }
@@ -260,7 +431,7 @@ export class MessagesService {
   async getPinnedMessages(conversationId: string, userId: string) {
     await this.ensureParticipant(userId, conversationId);
     return this.prisma.pinnedMessage.findMany({
-      where: { conversationId },
+      where: { conversationId, message: visibleTo(userId) },
       include: { message: { include: MESSAGE_INCLUDE } },
       orderBy: { pinnedAt: 'desc' },
     });
@@ -268,8 +439,12 @@ export class MessagesService {
 
   async pinMessage(conversationId: string, messageId: string, userId: string) {
     await this.ensureParticipant(userId, conversationId);
-    const msg = await this.prisma.message.findUnique({ where: { id: messageId } });
-    if (!msg || msg.conversationId !== conversationId) throw new NotFoundException('Message not found');
+    const msg = await this.getVisibleMessage(messageId, userId);
+    if (msg.conversationId !== conversationId)
+      throw new NotFoundException('Message not found');
+    // Épingler un chuchotement l'afficherait dans le bandeau de tout le monde
+    if (msg.isWhisper)
+      throw new ForbiddenException('Un chuchotement ne peut pas être épinglé');
     return this.prisma.pinnedMessage.upsert({
       where: { conversationId_messageId: { conversationId, messageId } },
       create: { conversationId, messageId, pinnedBy: userId },
@@ -278,18 +453,23 @@ export class MessagesService {
     });
   }
 
-  async unpinMessage(conversationId: string, messageId: string, userId: string) {
+  async unpinMessage(
+    conversationId: string,
+    messageId: string,
+    userId: string,
+  ) {
     await this.ensureParticipant(userId, conversationId);
-    await this.prisma.pinnedMessage.deleteMany({ where: { conversationId, messageId } });
+    await this.prisma.pinnedMessage.deleteMany({
+      where: { conversationId, messageId },
+    });
     return { ok: true };
   }
 
   async toggleReaction(messageId: string, userId: string, emoji: string) {
-    const msg = await this.prisma.message.findUnique({
-      where: { id: messageId },
-      select: { conversationId: true },
-    });
-    if (!msg) throw new NotFoundException('Message not found');
+    if (typeof emoji !== 'string' || !emoji.trim() || emoji.length > 16) {
+      throw new BadRequestException('Emoji invalide');
+    }
+    const msg = await this.getVisibleMessage(messageId, userId);
 
     const existing = await this.prisma.messageReaction.findUnique({
       where: { messageId_userId: { messageId, userId } },
@@ -318,6 +498,11 @@ export class MessagesService {
       orderBy: { createdAt: 'asc' },
     });
 
-    return { messageId, conversationId: msg.conversationId, reactions };
+    return {
+      messageId,
+      conversationId: msg.conversationId,
+      reactions,
+      message: msg,
+    };
   }
 }

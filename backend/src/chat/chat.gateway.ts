@@ -8,8 +8,13 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { PrismaService } from '../prisma/prisma.service';
-import { MessagesService } from '../messages/messages.service';
-import { BadRequestException, ForbiddenException, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { MessagesService, canSeeMessage } from '../messages/messages.service';
+import {
+  ForbiddenException,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { auth } from '../auth/better-auth.instance';
 
@@ -32,7 +37,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(ChatGateway.name);
   private onlineUsers = new Map<string, number>();
   // Salons vocaux : channelId -> { communityId, peers: socketId -> userId }
-  private voiceRooms = new Map<string, { communityId: string; peers: Map<string, string> }>();
+  private voiceRooms = new Map<
+    string,
+    { communityId: string; peers: Map<string, string> }
+  >();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -43,19 +51,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private broadcastVoiceState(channelId: string, communityId: string) {
     const room = this.voiceRooms.get(channelId);
     const users = room ? Array.from(new Set(room.peers.values())) : [];
-    this.server.to(`community:${communityId}`).emit('voice_state', { channelId, users });
+    this.server
+      .to(`community:${communityId}`)
+      .emit('voice_state', { channelId, users });
   }
 
   private leaveAllVoiceRooms(client: AuthedSocket) {
-    for (const [channelId, room] of this.voiceRooms.entries()) {
-      if (room.peers.has(client.id)) {
-        const userId = room.peers.get(client.id);
-        room.peers.delete(client.id);
-        client.to(`voice:${channelId}`).emit('voice_peer_left', { channelId, socketId: client.id, userId });
-        if (room.peers.size === 0) this.voiceRooms.delete(channelId);
-        this.broadcastVoiceState(channelId, room.communityId);
-      }
-    }
+    this.leaveVoiceRoomsWhere(() => true, client.id);
   }
 
   private async ensureCommunityMember(communityId: string, userId: string) {
@@ -65,25 +67,107 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!member) throw new ForbiddenException('Not a community member');
   }
 
+  /**
+   * Émet un évènement lié à un message à sa seule audience : toute la salle
+   * pour un message normal, l'auteur et les destinataires pour un chuchotement.
+   */
+  async emitToMessageAudience(
+    message: {
+      conversationId: string;
+      isWhisper: boolean;
+      senderId: string;
+      whisperTo: string[];
+    },
+    event: string,
+    payload: any,
+  ) {
+    if (!message.isWhisper) {
+      this.server.to(message.conversationId).emit(event, payload);
+      return;
+    }
+    const sockets = await this.server.in(message.conversationId).fetchSockets();
+    for (const s of sockets) {
+      const userId = s.data?.user?.id;
+      if (userId && canSeeMessage(message, userId)) s.emit(event, payload);
+    }
+  }
+
+  /** Retire un voix-participant de tous les salons vocaux (déconnexion, exclusion). */
+  private leaveVoiceRoomsWhere(
+    predicate: (channelId: string, communityId: string) => boolean,
+    socketId: string,
+  ) {
+    for (const [channelId, room] of this.voiceRooms.entries()) {
+      if (!predicate(channelId, room.communityId) || !room.peers.has(socketId))
+        continue;
+      const userId = room.peers.get(socketId);
+      room.peers.delete(socketId);
+      this.server
+        .to(`voice:${channelId}`)
+        .emit('voice_peer_left', { channelId, socketId, userId });
+      this.server.in(socketId).socketsLeave(`voice:${channelId}`);
+      if (room.peers.size === 0) this.voiceRooms.delete(channelId);
+      this.broadcastVoiceState(channelId, room.communityId);
+    }
+  }
+
+  /** Un membre retiré d'une conversation ne doit plus recevoir ses évènements. */
+  evictFromConversation(userId: string, conversationId: string) {
+    this.server.in(`user:${userId}`).socketsLeave(conversationId);
+  }
+
+  /** Conversation supprimée : plus personne ne reste dans sa salle. */
+  closeConversationRoom(conversationId: string) {
+    this.server.in(conversationId).socketsLeave(conversationId);
+  }
+
+  /** Exclusion, bannissement ou départ d'une communauté : coupe tout le temps réel associé. */
+  async evictFromCommunity(userId: string, communityId: string) {
+    const channels = await this.prisma.channel.findMany({
+      where: { communityId, conversationId: { not: null } },
+      select: { conversationId: true },
+    });
+    const rooms = [
+      `community:${communityId}`,
+      ...channels.map((c) => c.conversationId!),
+    ];
+    const sockets = await this.server.in(`user:${userId}`).fetchSockets();
+    for (const s of sockets) {
+      this.leaveVoiceRoomsWhere((_, cid) => cid === communityId, s.id);
+    }
+    this.server.in(`user:${userId}`).socketsLeave(rooms);
+  }
+
   async handleConnection(client: AuthedSocket) {
     try {
       const cookieHeader = client.handshake.headers.cookie || '';
       const session = await auth.api.getSession({
         headers: new Headers({ cookie: cookieHeader }),
       });
-      if (!session?.user) { client.disconnect(); return; }
+      if (!session?.user) {
+        client.disconnect();
+        return;
+      }
 
       client.user = { id: session.user.id, email: session.user.email };
+      // Aussi dans socket.data : seule propriété garantie sur les sockets de fetchSockets()
+      client.data.user = client.user;
       // Salle personnelle pour les notifications ciblées
       await client.join(`user:${session.user.id}`);
       const prev = this.onlineUsers.get(session.user.id) ?? 0;
       this.onlineUsers.set(session.user.id, prev + 1);
-      if (prev === 0) this.server.emit('user_online', { userId: session.user.id });
-      client.emit('online_users', { userIds: Array.from(this.onlineUsers.keys()) });
+      if (prev === 0)
+        this.server.emit('user_online', { userId: session.user.id });
+      client.emit('online_users', {
+        userIds: Array.from(this.onlineUsers.keys()),
+      });
       // Plancher de « vu à… » dès la connexion : si le serveur meurt brutalement
       // (pas de handleDisconnect), le dernier passage reste au moins daté d'ici.
       this.prisma.user
-        .update({ where: { id: session.user.id }, data: { lastSeenAt: new Date() } })
+        .update({
+          where: { id: session.user.id },
+          data: { lastSeenAt: new Date() },
+        })
         .catch(() => {});
       this.logger.log(`Connected: ${session.user.id}`);
     } catch {
@@ -103,14 +187,25 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.prisma.user
         .update({ where: { id: userId }, data: { lastSeenAt } })
         .catch(() => {});
-      this.server.emit('user_offline', { userId, lastSeenAt: lastSeenAt.toISOString() });
+      this.server.emit('user_offline', {
+        userId,
+        lastSeenAt: lastSeenAt.toISOString(),
+      });
     } else {
       this.onlineUsers.set(userId, count);
     }
   }
 
-  async emitSystemMessage(conversationId: string, senderId: string, content: string) {
-    const msg = await this.messagesService.createSystemMessage(senderId, conversationId, content);
+  async emitSystemMessage(
+    conversationId: string,
+    senderId: string,
+    content: string,
+  ) {
+    const msg = await this.messagesService.createSystemMessage(
+      senderId,
+      conversationId,
+      content,
+    );
     this.server.to(conversationId).emit('new_message', msg);
     return msg;
   }
@@ -145,7 +240,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { conversationId: string },
   ) {
-    if (!client.user) return;
+    if (!client.user || !client.rooms.has(data?.conversationId)) return;
     client.to(data.conversationId).emit('user_typing', {
       userId: client.user.id,
       conversationId: data.conversationId,
@@ -157,7 +252,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { conversationId: string },
   ) {
-    if (!client.user) return;
+    if (!client.user || !client.rooms.has(data?.conversationId)) return;
     client.to(data.conversationId).emit('user_stopped_typing', {
       userId: client.user.id,
       conversationId: data.conversationId,
@@ -167,7 +262,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('send_message')
   async handleSendMessage(
     @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() data: {
+    @MessageBody()
+    data: {
       conversationId: string;
       content?: string;
       fileUrl?: string;
@@ -179,39 +275,40 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     if (!client.user) throw new UnauthorizedException();
 
-    const content = (data.content ?? '').trim();
-    if (!content && !data.fileUrl) throw new BadRequestException('Message vide');
-    if (content.length > 4000) throw new BadRequestException('Message trop long (4000 caractères max)');
-
     const file = data.fileUrl
-      ? { fileUrl: data.fileUrl, fileName: data.fileName || 'fichier', fileType: data.fileType || 'application/octet-stream' }
+      ? {
+          fileUrl: data.fileUrl,
+          fileName: data.fileName || 'fichier',
+          fileType: data.fileType || 'application/octet-stream',
+        }
       : undefined;
 
+    // Validation (longueur, pièce jointe, destinataires) faite dans le service
     const message = await this.messagesService.createMessage(
       client.user.id,
       data.conversationId,
-      content,
+      data.content ?? '',
       file,
       data.whisperTo,
       data.replyToId,
     );
 
-    if (message.isWhisper && message.whisperTo?.length) {
-      const allowed = new Set([...message.whisperTo, client.user.id]);
-      const sockets = await this.server.in(data.conversationId).fetchSockets();
-      for (const s of sockets) {
-        const authed = s as any;
-        if (authed.user && allowed.has(authed.user.id)) s.emit('new_message', message);
-      }
-    } else {
-      this.server.to(data.conversationId).emit('new_message', message);
-    }
+    await this.emitToMessageAudience(message, 'new_message', message);
 
     // Notification push aux participants absents de la salle
-    const senderName = (message as any).sender?.nickname || client.user.email?.split('@')[0] || 'Quelqu\'un';
-    const preview = message.content ? message.content.substring(0, 80) : '📎 Fichier';
-    const socketsInRoom = await this.server.in(data.conversationId).fetchSockets();
-    const usersInRoom = new Set(socketsInRoom.map((s: any) => s.user?.id).filter(Boolean));
+    const senderName =
+      (message as any).sender?.nickname ||
+      client.user.email?.split('@')[0] ||
+      "Quelqu'un";
+    const preview = message.content
+      ? message.content.substring(0, 80)
+      : '📎 Fichier';
+    const socketsInRoom = await this.server
+      .in(data.conversationId)
+      .fetchSockets();
+    const usersInRoom = new Set(
+      socketsInRoom.map((s) => s.data?.user?.id).filter(Boolean),
+    );
 
     const conv = await this.prisma.conversation.findUnique({
       where: { id: data.conversationId },
@@ -219,6 +316,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
     if (conv) {
       for (const p of conv.participants) {
+        // Un chuchotement ne se notifie qu'à ses destinataires
+        if (message.isWhisper && !message.whisperTo.includes(p.userId))
+          continue;
         if (p.userId !== client.user.id && !usersInRoom.has(p.userId)) {
           this.server.to(`user:${p.userId}`).emit('notification', {
             type: 'message',
@@ -242,8 +342,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { messageId: string; content: string },
   ) {
     if (!client.user) throw new UnauthorizedException();
-    const updated = await this.messagesService.editMessage(data.messageId, client.user.id, data.content);
-    this.server.to(updated.conversationId).emit('message_edited', updated);
+    const updated = await this.messagesService.editMessage(
+      data.messageId,
+      client.user.id,
+      data.content,
+    );
+    await this.emitToMessageAudience(updated, 'message_edited', updated);
     return updated;
   }
 
@@ -253,8 +357,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { messageId: string },
   ) {
     if (!client.user) throw new UnauthorizedException();
-    const updated = await this.messagesService.deleteMessage(data.messageId, client.user.id);
-    this.server.to(updated.conversationId).emit('message_deleted', {
+    const updated = await this.messagesService.deleteMessage(
+      data.messageId,
+      client.user.id,
+    );
+    await this.emitToMessageAudience(updated, 'message_deleted', {
       messageId: updated.id,
       conversationId: updated.conversationId,
     });
@@ -267,12 +374,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { messageId: string; emoji: string },
   ) {
     if (!client.user) throw new UnauthorizedException();
-    const result = await this.messagesService.toggleReaction(data.messageId, client.user.id, data.emoji);
-    this.server.to(result.conversationId).emit('reaction_updated', {
-      messageId: result.messageId,
-      conversationId: result.conversationId,
-      reactions: result.reactions,
-    });
+    const { message, ...result } = await this.messagesService.toggleReaction(
+      data.messageId,
+      client.user.id,
+      data.emoji,
+    );
+    await this.emitToMessageAudience(message, 'reaction_updated', result);
     return result;
   }
 
@@ -297,7 +404,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string },
   ) {
     if (!client.user) return;
-    const { count } = await this.messagesService.markAsDelivered(data.conversationId, client.user.id);
+    const { count } = await this.messagesService.markAsDelivered(
+      data.conversationId,
+      client.user.id,
+    );
     // N'émettre que s'il y a réellement des nouveaux reçus (évite le bruit)
     if (count > 0) {
       client.to(data.conversationId).emit('messages_delivered', {
@@ -310,19 +420,49 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // ── WebRTC Signaling ──────────────────────────────────────────────────────────
 
-  /** User IDs des autres participants d'une conversation (pour le routage des appels). */
-  private async otherParticipantIds(conversationId: string, excludeUserId: string): Promise<string[]> {
+  /**
+   * User IDs des autres participants d'une conversation (pour le routage des appels).
+   * Vide si l'émetteur n'en fait pas partie, ou si c'est un DM bloqué.
+   */
+  private async otherParticipantIds(
+    conversationId: string,
+    excludeUserId: string,
+  ): Promise<string[]> {
+    if (typeof conversationId !== 'string') return [];
     const conv = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
       include: { participants: { select: { userId: true } } },
     });
-    if (!conv) return [];
-    return conv.participants.map((p) => p.userId).filter((id) => id !== excludeUserId);
+    if (!conv || conv.type === 'CHANNEL') return [];
+    const ids = conv.participants.map((p) => p.userId);
+    if (!ids.includes(excludeUserId)) return [];
+    const others = ids.filter((id) => id !== excludeUserId);
+    if (conv.type === 'DM' && others.length) {
+      const blocked = await this.prisma.friendship.count({
+        where: {
+          status: 'BLOCKED',
+          OR: [
+            { requesterId: excludeUserId, addresseeId: others[0] },
+            { requesterId: others[0], addresseeId: excludeUserId },
+          ],
+        },
+      });
+      if (blocked) return [];
+    }
+    return others;
   }
 
   /** Relaye un évènement d'appel à la salle personnelle de chaque autre participant. */
-  private async relayCall(conversationId: string, excludeUserId: string, event: string, payload: any) {
-    const targets = await this.otherParticipantIds(conversationId, excludeUserId);
+  private async relayCall(
+    conversationId: string,
+    excludeUserId: string,
+    event: string,
+    payload: any,
+  ) {
+    const targets = await this.otherParticipantIds(
+      conversationId,
+      excludeUserId,
+    );
     for (const userId of targets) {
       this.server.to(`user:${userId}`).emit(event, payload);
     }
@@ -331,15 +471,22 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('call_offer')
   async handleCallOffer(
     @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() data: { conversationId: string; offer: any; callType: 'audio' | 'video' },
+    @MessageBody()
+    data: { conversationId: string; offer: any; callType: 'audio' | 'video' },
   ) {
     if (!client.user) return;
+    const targets = await this.otherParticipantIds(
+      data.conversationId,
+      client.user.id,
+    );
+    if (!targets.length) return;
 
     const caller = await this.prisma.user.findUnique({
       where: { id: client.user.id },
       select: { nickname: true, email: true, image: true },
     });
-    const callerName = caller?.nickname || caller?.email?.split('@')[0] || 'Appel';
+    const callerName =
+      caller?.nickname || caller?.email?.split('@')[0] || 'Appel';
 
     // Sonne globalement via la salle personnelle de chaque destinataire (façon WhatsApp).
     await this.relayCall(data.conversationId, client.user.id, 'call_incoming', {
@@ -370,10 +517,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string; candidate: any },
   ) {
     if (!client.user) return;
-    await this.relayCall(data.conversationId, client.user.id, 'call_ice_candidate', {
-      from: client.user.id,
-      candidate: data.candidate,
-    });
+    await this.relayCall(
+      data.conversationId,
+      client.user.id,
+      'call_ice_candidate',
+      {
+        from: client.user.id,
+        candidate: data.candidate,
+      },
+    );
   }
 
   /** Renégociation en cours d'appel (reconnexion après coupure réseau — ICE restart). */
@@ -383,10 +535,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string; offer: any },
   ) {
     if (!client.user) return;
-    await this.relayCall(data.conversationId, client.user.id, 'call_renegotiate', {
-      from: client.user.id,
-      offer: data.offer,
-    });
+    await this.relayCall(
+      data.conversationId,
+      client.user.id,
+      'call_renegotiate',
+      {
+        from: client.user.id,
+        offer: data.offer,
+      },
+    );
   }
 
   @SubscribeMessage('call_end')
@@ -395,7 +552,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string },
   ) {
     if (!client.user) return;
-    await this.relayCall(data.conversationId, client.user.id, 'call_ended', { from: client.user.id });
+    await this.relayCall(data.conversationId, client.user.id, 'call_ended', {
+      from: client.user.id,
+    });
   }
 
   @SubscribeMessage('call_reject')
@@ -404,7 +563,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string },
   ) {
     if (!client.user) return;
-    await this.relayCall(data.conversationId, client.user.id, 'call_rejected', { from: client.user.id });
+    await this.relayCall(data.conversationId, client.user.id, 'call_rejected', {
+      from: client.user.id,
+    });
   }
 
   // ── Communautés : room de présence (état vocal, évènements de communauté) ──
@@ -442,7 +603,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       where: { id: data.channelId },
       select: { communityId: true, type: true },
     });
-    if (!channel || channel.type !== 'VOICE') throw new NotFoundException('Salon vocal introuvable');
+    if (!channel || channel.type !== 'VOICE')
+      throw new NotFoundException('Salon vocal introuvable');
     await this.ensureCommunityMember(channel.communityId, client.user.id);
 
     const roomKey = `voice:${data.channelId}`;
@@ -454,11 +616,22 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     // Pairs déjà présents (à qui le nouvel arrivant va envoyer une offre)
-    const existingPeers = Array.from(room.peers.entries()).map(([socketId, userId]) => ({ socketId, userId }));
+    const existingPeers = Array.from(room.peers.entries()).map(
+      ([socketId, userId]) => ({ socketId, userId }),
+    );
     room.peers.set(client.id, client.user.id);
 
-    client.emit('voice_existing_peers', { channelId: data.channelId, peers: existingPeers });
-    client.to(roomKey).emit('voice_peer_joined', { channelId: data.channelId, socketId: client.id, userId: client.user.id });
+    client.emit('voice_existing_peers', {
+      channelId: data.channelId,
+      peers: existingPeers,
+    });
+    client
+      .to(roomKey)
+      .emit('voice_peer_joined', {
+        channelId: data.channelId,
+        socketId: client.id,
+        userId: client.user.id,
+      });
     this.broadcastVoiceState(data.channelId, channel.communityId);
     return { ok: true };
   }
@@ -473,7 +646,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (room?.peers.has(client.id)) {
       room.peers.delete(client.id);
       client.leave(`voice:${data.channelId}`);
-      client.to(`voice:${data.channelId}`).emit('voice_peer_left', { channelId: data.channelId, socketId: client.id, userId: client.user.id });
+      client
+        .to(`voice:${data.channelId}`)
+        .emit('voice_peer_left', {
+          channelId: data.channelId,
+          socketId: client.id,
+          userId: client.user.id,
+        });
       if (room.peers.size === 0) this.voiceRooms.delete(data.channelId);
       this.broadcastVoiceState(data.channelId, room.communityId);
     }
@@ -485,6 +664,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { targetSocketId: string; signal: any },
   ) {
     if (!client.user) return;
+    // Signalisation uniquement entre pairs d'un même salon vocal
+    const sharesRoom = Array.from(this.voiceRooms.values()).some(
+      (room) =>
+        room.peers.has(client.id) && room.peers.has(data?.targetSocketId),
+    );
+    if (!sharesRoom) return;
     this.server.to(data.targetSocketId).emit('voice_signal', {
       fromSocketId: client.id,
       fromUserId: client.user.id,
@@ -497,7 +682,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { channelId: string; muted: boolean },
   ) {
-    if (!client.user) return;
+    if (
+      !client.user ||
+      !this.voiceRooms.get(data?.channelId)?.peers.has(client.id)
+    )
+      return;
     client.to(`voice:${data.channelId}`).emit('voice_peer_mute', {
       socketId: client.id,
       userId: client.user.id,

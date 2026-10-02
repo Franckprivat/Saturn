@@ -11,6 +11,14 @@ import { auth } from './auth/better-auth.instance';
 async function bootstrap() {
   const expressApp = express();
 
+  // Derrière Nginx, req.ip vaut l'IP du conteneur Nginx : sans « trust proxy »,
+  // tous les utilisateurs partagent le même quota du rate limiter.
+  // Par défaut on ne fait confiance qu'aux proxys du réseau local (Docker).
+  expressApp.set(
+    'trust proxy',
+    process.env.TRUST_PROXY ?? 'loopback, linklocal, uniquelocal',
+  );
+
   // ── CORS en tout premier — avant better-auth et body parser ───────────────
   // NestJS app.enableCors() vient trop tard (après better-auth dans la stack)
   const allowedOrigins = process.env.ALLOWED_ORIGINS
@@ -24,8 +32,14 @@ async function bootstrap() {
       res.setHeader('Vary', 'Origin');
     }
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,Cookie,Set-Cookie');
+    res.setHeader(
+      'Access-Control-Allow-Methods',
+      'GET,POST,PUT,DELETE,PATCH,OPTIONS',
+    );
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type,Authorization,Cookie,Set-Cookie',
+    );
     // Chrome Private Network Access — requis quand localhost:3000 appelle localhost:3001
     res.setHeader('Access-Control-Allow-Private-Network', 'true');
 
@@ -48,9 +62,13 @@ async function bootstrap() {
   expressApp.use(express.urlencoded({ extended: true, limit: '6mb' }));
 
   // ── NestJS sur l'Express app existante ────────────────────────────────────
-  const app = await NestFactory.create(AppModule, new ExpressAdapter(expressApp), {
-    bodyParser: false,
-  });
+  const app = await NestFactory.create(
+    AppModule,
+    new ExpressAdapter(expressApp),
+    {
+      bodyParser: false,
+    },
+  );
 
   app.use(
     helmet({
