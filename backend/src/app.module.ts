@@ -18,6 +18,7 @@ import { CommunitiesModule } from './communities/communities.module';
 import { CallsModule } from './calls/calls.module';
 import { DemoModule } from './demo/demo.module';
 import { VoiceModule } from './voice/voice.module';
+import { PushModule } from './push/push.module';
 import { SessionGuard } from './auth/session.guard';
 
 @Module({
@@ -62,6 +63,7 @@ import { SessionGuard } from './auth/session.guard';
     CallsModule,
     DemoModule,
     VoiceModule,
+    PushModule,
   ],
   controllers: [AppController],
   providers: [

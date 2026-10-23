@@ -18,6 +18,17 @@ import {
 import { Server, Socket } from 'socket.io';
 import { auth } from '../auth/better-auth.instance';
 import { getLiveKitConfig, removeFromVoiceRoom } from '../voice/livekit';
+import { PushService } from '../push/push.service';
+
+/** Notification affichée dans la cloche (et en push si l'utilisateur est hors ligne). */
+export interface AppNotificationPayload {
+  type: string;
+  title: string;
+  body: string;
+  href: string;
+  image?: string | null;
+  [extra: string]: unknown;
+}
 
 interface AuthedSocket extends Socket {
   user?: { id: string; email: string };
@@ -51,7 +62,44 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private readonly prisma: PrismaService,
     private readonly messagesService: MessagesService,
+    private readonly push: PushService,
   ) {}
+
+  /**
+   * Notifie des utilisateurs : dans l'app (cloche) s'ils sont connectés, sinon
+   * par notification push sur leurs navigateurs abonnés.
+   * `except` : salle dont les sockets n'ont pas besoin de la notification
+   * (ex. la conversation déjà ouverte).
+   */
+  async notify(
+    userIds: string[],
+    payload: AppNotificationPayload,
+    options: { except?: string; tag?: string } = {},
+  ) {
+    if (!userIds.length) return;
+    const full = { ...payload, timestamp: new Date().toISOString() };
+    const rooms = userIds.map((id) => `user:${id}`);
+    (options.except
+      ? this.server.to(rooms).except(options.except)
+      : this.server.to(rooms)
+    ).emit('notification', full);
+
+    const online = await this.onlineAmong(userIds).catch(
+      () => new Set(userIds),
+    );
+    const offline = userIds.filter((id) => !online.has(id));
+    if (offline.length) {
+      void this.push
+        .sendToUsers(offline, {
+          title: payload.title,
+          body: payload.body,
+          href: payload.href,
+          image: payload.image,
+          tag: options.tag,
+        })
+        .catch(() => {});
+    }
+  }
 
   /**
    * Qui est dans un salon vocal : déduit des sockets de la salle voice:<id>,
@@ -382,7 +430,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       "Quelqu'un";
     const preview = message.content
       ? message.content.substring(0, 80)
-      : '📎 Fichier';
+      : message.fileType?.startsWith('audio/')
+        ? '🎤 Message vocal'
+        : message.fileType?.startsWith('image/')
+          ? '📷 Photo'
+          : '📎 Fichier';
     // Destinataires : participants (salons exclus : trop de membres), filtrés
     // sur l'audience du chuchotement. Une seule émission, sans fetchSockets :
     // `except` écarte les sockets qui ont déjà la conversation ouverte.
@@ -390,28 +442,25 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       where: { conversationId: data.conversationId },
       select: { userId: true },
     });
-    const rooms = participants
+    const recipients = participants
       .map((p) => p.userId)
       .filter(
         (id) =>
           id !== client.user!.id &&
           (!message.isWhisper || message.whisperTo.includes(id)),
-      )
-      .map((id) => `user:${id}`);
-    if (rooms.length) {
-      this.server
-        .to(rooms)
-        .except(data.conversationId)
-        .emit('notification', {
-          type: 'message',
-          title: senderName,
-          body: preview,
-          href: `/chat?conversationId=${data.conversationId}`,
-          conversationId: data.conversationId,
-          image: message.sender?.image,
-          timestamp: new Date().toISOString(),
-        });
-    }
+      );
+    await this.notify(
+      recipients,
+      {
+        type: 'message',
+        title: senderName,
+        body: preview,
+        href: `/chat?conversationId=${data.conversationId}`,
+        conversationId: data.conversationId,
+        image: message.sender?.image,
+      },
+      { except: data.conversationId, tag: data.conversationId },
+    );
 
     return message;
   }

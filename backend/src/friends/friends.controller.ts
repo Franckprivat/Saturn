@@ -49,13 +49,12 @@ export class FriendsController {
     const server = this.chatGateway.server;
     if (result.status === 'PENDING') {
       server.to(`user:${addresseeId}`).emit('friend_request', { from: me });
-      server.to(`user:${addresseeId}`).emit('notification', {
+      void this.chatGateway.notify([addresseeId], {
         type: 'friend_request',
         title: "Nouvelle demande d'ami",
         body: `${briefName(me)} vous a ajouté`,
         href: '/friends',
         image: me?.image,
-        timestamp: new Date().toISOString(),
       });
     } else if (result.status === 'ACCEPTED') {
       // Demande croisée auto-acceptée : les deux côtés rafraîchissent leur badge
@@ -90,13 +89,12 @@ export class FriendsController {
     const requesterId = 'requesterId' in result ? result.requesterId : null;
     if (requesterId) {
       const me = await this.friendsService.getUserBrief(user.id);
-      this.chatGateway.server.to(`user:${requesterId}`).emit('notification', {
+      void this.chatGateway.notify([requesterId], {
         type: 'friend_accepted',
         title: 'Demande acceptée',
         body: `${briefName(me)} a accepté votre demande d'ami`,
         href: '/friends',
         image: me?.image,
-        timestamp: new Date().toISOString(),
       });
       this.chatGateway.server
         .to(`user:${requesterId}`)

@@ -11,6 +11,8 @@ import { PageLoader } from '@/components/Spinner';
 import type { ChatUser } from '@/store/chatStore';
 import { toast } from '@/components/Toast';
 import { apiErrorMessage } from '@/lib/errors';
+import { PushToggle } from '@/components/PushToggle';
+import { disablePush } from '@/lib/push';
 
 type Tab = 'profil' | 'liens' | 'parametres';
 
@@ -209,6 +211,8 @@ export default function ProfilePage() {
   };
 
   const handleLogout = async () => {
+    // Ce navigateur ne doit plus recevoir les notifications de ce compte
+    await disablePush();
     await authClient.signOut();
     router.push('/login');
   };
@@ -531,6 +535,14 @@ export default function ProfilePage() {
         {/* ── TAB PARAMÈTRES ── */}
         {tab === 'parametres' && (
           <div className="space-y-4">
+
+            {/* Notifications push */}
+            <div className={`${CARD} overflow-hidden`}>
+              <div className="px-4 py-3 border-b border-[var(--sat-border)]">
+                <p className={LABEL}>Notifications</p>
+              </div>
+              <PushToggle className="p-4" />
+            </div>
 
             {/* Thème */}
             <div className={`${CARD} overflow-hidden`}>
