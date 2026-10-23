@@ -94,7 +94,7 @@ export function ImageSendModal({ file, onSend, onClose }: ImageSendModalProps) {
         {/* En-tête */}
         <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--sat-border)' }}>
           <span className="text-sm font-bold" style={{ color: 'var(--sat-text)' }}>Envoyer une image</span>
-          <button onClick={onClose} disabled={status === 'uploading'}
+          <button aria-label="Fermer" onClick={onClose} disabled={status === 'uploading'}
             className="w-7 h-7 rounded-lg flex items-center justify-center transition disabled:opacity-40"
             style={{ color: 'var(--sat-muted)' }}>✕</button>
         </div>

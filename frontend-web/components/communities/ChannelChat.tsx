@@ -13,6 +13,7 @@ import { DeleteMessageDialog } from '@/components/DeleteMessageDialog';
 import { getHiddenMessageIds, hideMessageForMe } from '@/lib/hiddenMessages';
 import { toast } from '@/components/Toast';
 import { SmileyIcon, ReplyIcon, EditIcon, TrashIcon, PaperclipIcon, SendIcon } from '@/components/Icons';
+import { apiErrorMessage } from '@/lib/errors';
 
 function dn(u: { nickname?: string | null; email?: string | null } | null | undefined) {
   if (!u) return 'Inconnu';
@@ -69,7 +70,7 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
         nextCursor: res.data.nextCursor ?? null,
         hasMore: res.data.hasMore ?? false,
       }))
-      .catch(() => {})
+      .catch((err) => toast(apiErrorMessage(err, 'Chargement des messages impossible'), 'error'))
       .finally(() => setLoading(false));
   }, [conversationId]);
 
@@ -221,8 +222,8 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
                       onKeyDown={(e) => { if (e.key === 'Enter') submitEdit(); if (e.key === 'Escape') setEditingId(null); }}
                       className="flex-1 px-3 py-1.5 rounded-lg text-sm focus:outline-none"
                       style={{ background: 'var(--sat-surface)', border: '1.5px solid var(--sat-accent)', color: 'var(--sat-text)' }} />
-                    <button onClick={submitEdit} className="text-xs font-bold" style={{ color: 'var(--sat-accent)' }}>✓</button>
-                    <button onClick={() => setEditingId(null)} className="text-xs" style={{ color: 'var(--sat-muted)' }}>✕</button>
+                    <button aria-label="Valider la modification" onClick={submitEdit} className="text-xs font-bold" style={{ color: 'var(--sat-accent)' }}>✓</button>
+                    <button aria-label="Annuler la modification" onClick={() => setEditingId(null)} className="text-xs" style={{ color: 'var(--sat-muted)' }}>✕</button>
                   </div>
                 ) : isDeleted ? (
                   <p className="text-sm italic" style={{ color: 'var(--sat-faint)' }}>Message supprimé</p>
@@ -308,7 +309,7 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
         {replyTo && (
           <div className="flex items-center gap-2 px-3 py-1.5 mb-1.5 rounded-t-xl text-xs" style={{ background: 'var(--sat-hover)', color: 'var(--sat-muted)' }}>
             Réponse à <strong style={{ color: 'var(--sat-text)' }}>{dn(replyTo.sender)}</strong>
-            <button onClick={() => setReplyTo(null)} className="ml-auto">✕</button>
+            <button aria-label="Annuler la réponse" onClick={() => setReplyTo(null)} className="ml-auto">✕</button>
           </div>
         )}
         <div className="flex items-center gap-1 px-3 rounded-xl" style={{ background: 'var(--sat-surface)', border: '1.5px solid var(--sat-border-2)' }}>
@@ -321,10 +322,10 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
             placeholder={`Envoyer un message dans #${channelName}`}
             className="flex-1 py-3 text-sm bg-transparent focus:outline-none" style={{ color: 'var(--sat-text)' }} />
           <div className="relative">
-            <button onClick={() => setShowEmoji((v) => !v)} className="w-8 h-8 flex items-center justify-center rounded-lg" style={{ color: 'var(--sat-faint)' }}><SmileyIcon size={19} /></button>
+            <button aria-label="Insérer un emoji" onClick={() => setShowEmoji((v) => !v)} className="w-8 h-8 flex items-center justify-center rounded-lg" style={{ color: 'var(--sat-faint)' }}><SmileyIcon size={19} /></button>
             {showEmoji && <EmojiPicker onSelect={(e) => setText((m) => m + e)} onClose={() => setShowEmoji(false)} />}
           </div>
-          <button onClick={() => send()} disabled={!text.trim()} className="w-8 h-8 rounded-lg flex items-center justify-center transition"
+          <button aria-label="Envoyer" onClick={() => send()} disabled={!text.trim()} className="w-8 h-8 rounded-lg flex items-center justify-center transition"
             style={{ background: text.trim() ? 'var(--sat-accent)' : 'var(--sat-hover)', color: text.trim() ? '#fff' : 'var(--sat-faint)' }}>
             <SendIcon size={14} />
           </button>

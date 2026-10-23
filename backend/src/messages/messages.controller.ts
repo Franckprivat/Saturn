@@ -1,10 +1,8 @@
 import {
-  Body,
   Controller,
   Delete,
   Get,
   Param,
-  Patch,
   Post,
   Query,
   Req,
@@ -56,31 +54,6 @@ export class MessagesController {
     return this.messagesService.getPinnedMessages(conversationId, user.id);
   }
 
-  @Post()
-  async sendMessage(
-    @Req() req: Request,
-    @Param('conversationId') conversationId: string,
-    @Body('content') content: string,
-    @Body('fileUrl') fileUrl?: string,
-    @Body('fileName') fileName?: string,
-    @Body('fileType') fileType?: string,
-  ) {
-    const user = await getSessionUser(req);
-    const file = fileUrl
-      ? {
-          fileUrl,
-          fileName: fileName || 'fichier',
-          fileType: fileType || 'application/octet-stream',
-        }
-      : undefined;
-    return this.messagesService.createMessage(
-      user.id,
-      conversationId,
-      content || '',
-      file,
-    );
-  }
-
   @Post('read')
   async markRead(
     @Req() req: Request,
@@ -114,13 +87,6 @@ export class MessagesController {
     );
   }
 
-  @Patch(':messageId')
-  async editMessage(
-    @Req() req: Request,
-    @Param('messageId') messageId: string,
-    @Body('content') content: string,
-  ) {
-    const user = await getSessionUser(req);
-    return this.messagesService.editMessage(messageId, user.id, content);
-  }
+  // L'envoi et l'édition passent par le socket (send_message / edit_message) :
+  // des routes REST équivalentes créaient des messages jamais diffusés en temps réel.
 }

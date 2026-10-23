@@ -19,11 +19,15 @@ export default function LoginPage() {
     setLoading(true);
     const { error: authError } = await authClient.signIn.email({ email, password });
     if (authError) {
-      setError(authError.message || 'Erreur lors de la connexion');
+      setError(authError.code === 'EMAIL_NOT_VERIFIED'
+        ? 'Confirme d\'abord ton adresse : un nouveau lien vient de t\'être envoyé par e-mail.'
+        : authError.message || 'Erreur lors de la connexion');
       setLoading(false);
       return;
     }
-    router.push(searchParams.get('redirect') || '/');
+    // Redirection interne uniquement (pas de « //site.com » ni d'URL absolue)
+    const redirect = searchParams.get('redirect');
+    router.push(redirect && /^\/(?![/\\])/.test(redirect) ? redirect : '/');
   };
 
   return (

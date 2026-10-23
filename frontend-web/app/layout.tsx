@@ -1,24 +1,30 @@
 import type { Metadata } from "next";
-import { Montserrat, Source_Sans_3 } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
 import { AppShell } from "@/components/AppShell";
 
+// Polices auto-hébergées (fichiers variables, sous-ensemble latin, licence OFL) :
+// le build ne dépend plus de Google Fonts, dont une réponse inattendue faisait
+// échouer `next build` en CI.
+
 // Texte courant : Source Sans 3, humaniste et très lisible en petite taille
-const sourceSans = Source_Sans_3({
+const sourceSans = localFont({
   variable: "--font-body",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  style: ["normal", "italic"],
+  src: [
+    { path: "./fonts/SourceSans3-Regular-latin.woff2", weight: "400 700", style: "normal" },
+    { path: "./fonts/SourceSans3-Italic-latin.woff2", weight: "400 700", style: "italic" },
+  ],
   display: "swap",
 });
 
 // Titres et marque : Montserrat, géométrique
-const montserrat = Montserrat({
+const montserrat = localFont({
   variable: "--font-heading",
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  style: ["normal", "italic"],
+  src: [
+    { path: "./fonts/Montserrat-Regular-latin.woff2", weight: "500 700", style: "normal" },
+    { path: "./fonts/Montserrat-Italic-latin.woff2", weight: "500 700", style: "italic" },
+  ],
   display: "swap",
 });
 

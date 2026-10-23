@@ -4,6 +4,8 @@ import { useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { mediaUrl } from '@/lib/media';
 import { Avatar } from './Avatar';
+import { toast } from './Toast';
+import { apiErrorMessage } from '@/lib/errors';
 import type { ChatUser } from '@/store/chatStore';
 
 interface Member {
@@ -63,7 +65,7 @@ function SectionTab({ active, onClick, children }: { active: boolean; onClick: (
 }
 
 export function GroupPanel({
-  conversationId, name, description, image, participants, attachments,
+  conversationId, name, description, image, creatorId, participants, attachments,
   currentUserId, friends, onClose, onUpdated, onLeft, onDeleted,
 }: GroupPanelProps) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -92,16 +94,30 @@ export function GroupPanel({
 
   const myParticipant = participants.find((p) => p.user.id === currentUserId);
   const isAdmin = myParticipant?.role === 'ADMIN';
+  // Le créateur est propriétaire du groupe : intouchable, et seul lui gère les
+  // autres admins tant qu'il est dans le groupe (mêmes règles que le backend).
+  const creatorPresent = !!creatorId && participants.some((p) => p.user.id === creatorId);
+  const isOwner = !!creatorId && creatorId === currentUserId;
+  const canManage = (m: Member) =>
+    isAdmin && m.user.id !== currentUserId && m.user.id !== creatorId
+    && (m.role === 'MEMBER' || isOwner || !creatorPresent);
+  const canDeleteGroup = isAdmin && (isOwner || !creatorPresent);
   const memberIds = new Set(participants.map((p) => p.user.id));
   const addableFriends = friends.filter((f) => !memberIds.has(f.id));
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setEditImage(reader.result as string);
-    reader.readAsDataURL(file);
     e.target.value = '';
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast('Image trop lourde (max 5 Mo)', 'error'); return; }
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await api.post('/upload', form);
+      setEditImage(res.data.url);
+    } catch (err) {
+      toast(apiErrorMessage(err, "Impossible d'envoyer l'image"), 'error');
+    }
   };
 
   const saveInfos = async () => {
@@ -116,6 +132,8 @@ export function GroupPanel({
       onUpdated();
       setInfoSaved(true);
       setTimeout(() => setInfoSaved(false), 2000);
+    } catch (err) {
+      toast(apiErrorMessage(err, 'Enregistrement impossible'), 'error');
     } finally {
       setSavingInfo(false);
     }
@@ -129,19 +147,29 @@ export function GroupPanel({
       setSelectedNew([]);
       setAddingMembers(false);
       onUpdated();
+    } catch (err) {
+      toast(apiErrorMessage(err, "Impossible d'ajouter ces membres"), 'error');
     } finally {
       setSavingMembers(false);
     }
   };
 
   const changeRole = async (userId: string, role: 'ADMIN' | 'MEMBER') => {
-    await api.patch(`/conversations/${conversationId}/members/${userId}/role`, { role });
-    onUpdated();
+    try {
+      await api.patch(`/conversations/${conversationId}/members/${userId}/role`, { role });
+      onUpdated();
+    } catch (err) {
+      toast(apiErrorMessage(err, 'Changement de rôle impossible'), 'error');
+    }
   };
 
   const removeMember = async (userId: string) => {
-    await api.delete(`/conversations/${conversationId}/members/${userId}`);
-    onUpdated();
+    try {
+      await api.delete(`/conversations/${conversationId}/members/${userId}`);
+      onUpdated();
+    } catch (err) {
+      toast(apiErrorMessage(err, 'Exclusion impossible'), 'error');
+    }
   };
 
   const handleLeave = async () => {
@@ -171,7 +199,9 @@ export function GroupPanel({
       const res = await api.post(`/conversations/${conversationId}/invite`);
       const link = `${window.location.origin}/join/${res.data.token}`;
       setInviteLink(link);
-    } catch { /* ignore */ }
+    } catch (err) {
+      toast(apiErrorMessage(err, "Impossible de créer le lien d'invitation"), 'error');
+    }
   };
 
   const copyLink = async () => {
@@ -214,7 +244,7 @@ export function GroupPanel({
         <span className="text-[13px] font-bold" style={{ color: 'var(--sat-text)' }}>
           Paramètres du groupe
         </span>
-        <button
+        <button aria-label="Fermer"
           onClick={onClose}
           className="w-7 h-7 rounded-full flex items-center justify-center transition text-lg leading-none"
           style={{ color: 'var(--sat-muted)', background: 'var(--sat-hover)' }}
@@ -448,7 +478,7 @@ export function GroupPanel({
               )}
 
               {/* Supprimer (admin seulement) */}
-              {isAdmin && !confirmDelete && (
+              {canDeleteGroup && !confirmDelete && (
                 <button
                   onClick={() => setConfirmDelete(true)}
                   className="w-full py-2.5 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-2"
@@ -462,7 +492,7 @@ export function GroupPanel({
                   Supprimer le groupe
                 </button>
               )}
-              {isAdmin && confirmDelete && (
+              {canDeleteGroup && confirmDelete && (
                 <div className="rounded-xl p-3 space-y-2" style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
                   <p className="text-[11px] font-semibold text-center" style={{ color: '#EF4444' }}>
                     Supprimer définitivement ? Tous les messages seront perdus.
@@ -590,17 +620,18 @@ export function GroupPanel({
                       className="text-[10px] font-semibold"
                       style={{ color: p.role === 'ADMIN' ? 'var(--sat-accent)' : 'var(--sat-faint)' }}
                     >
-                      {p.role === 'ADMIN' ? '⭐ Administrateur' : 'Membre'}
+                      {p.user.id === creatorId ? '👑 Créateur' : p.role === 'ADMIN' ? '⭐ Administrateur' : 'Membre'}
                     </p>
                   </div>
 
                   {/* Actions admin sur les autres */}
-                  {isAdmin && p.user.id !== currentUserId && (
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                  {canManage(p) && (
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition">
                       {p.role === 'MEMBER' ? (
                         <button
                           onClick={() => changeRole(p.user.id, 'ADMIN')}
                           title="Promouvoir admin"
+                          aria-label={`Promouvoir ${p.user.nickname} administrateur`}
                           className="w-7 h-7 rounded-lg flex items-center justify-center transition text-xs"
                           style={{ background: 'rgba(37,99,235,0.12)', color: 'var(--sat-accent)' }}
                           onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(37,99,235,0.25)')}
@@ -612,6 +643,7 @@ export function GroupPanel({
                         <button
                           onClick={() => changeRole(p.user.id, 'MEMBER')}
                           title="Rétrograder"
+                          aria-label={`Retirer le statut d'administrateur à ${p.user.nickname}`}
                           className="w-7 h-7 rounded-lg flex items-center justify-center transition text-xs"
                           style={{ background: 'var(--sat-hover)', color: 'var(--sat-muted)' }}
                           onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--sat-active)')}
@@ -623,6 +655,7 @@ export function GroupPanel({
                       <button
                         onClick={() => removeMember(p.user.id)}
                         title="Exclure du groupe"
+                        aria-label={`Exclure ${p.user.nickname} du groupe`}
                         className="w-7 h-7 rounded-lg flex items-center justify-center transition text-xs"
                         style={{ background: 'rgba(239,68,68,0.08)', color: '#EF4444' }}
                         onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239,68,68,0.2)')}

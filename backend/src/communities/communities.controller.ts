@@ -11,6 +11,15 @@ import {
 import { CommunitiesService } from './communities.service';
 import { InvitationsService } from './invitations.service';
 import { getSessionUser } from '../auth/get-session-user';
+import {
+  CreateChannelDto,
+  CreateCommunityDto,
+  JoinCommunityDto,
+  NameDto,
+  SetCommunityRoleDto,
+  TargetUserDto,
+  UpdateCommunityDto,
+} from './dto/community.dto';
 import type { Request } from 'express';
 
 @Controller('communities')
@@ -27,10 +36,7 @@ export class CommunitiesController {
   }
 
   @Post()
-  async create(
-    @Req() req: Request,
-    @Body() body: { name: string; description?: string; image?: string },
-  ) {
+  async create(@Req() req: Request, @Body() body: CreateCommunityDto) {
     const user = await getSessionUser(req);
     return this.communitiesService.createCommunity(
       user.id,
@@ -44,7 +50,7 @@ export class CommunitiesController {
   async join(
     @Req() req: Request,
     @Param('token') token: string,
-    @Body('message') message?: string,
+    @Body() { message }: JoinCommunityDto,
   ) {
     const user = await getSessionUser(req);
     // Pipeline unifié : bans, quotas, expiration et politique d'adhésion
@@ -61,7 +67,7 @@ export class CommunitiesController {
   async update(
     @Req() req: Request,
     @Param('id') id: string,
-    @Body() body: { name?: string; description?: string; image?: string },
+    @Body() body: UpdateCommunityDto,
   ) {
     const user = await getSessionUser(req);
     return this.communitiesService.updateCommunity(id, user.id, body);
@@ -71,12 +77,6 @@ export class CommunitiesController {
   async remove(@Req() req: Request, @Param('id') id: string) {
     const user = await getSessionUser(req);
     return this.communitiesService.deleteCommunity(id, user.id);
-  }
-
-  @Get(':id/invite')
-  async invite(@Req() req: Request, @Param('id') id: string) {
-    const user = await getSessionUser(req);
-    return this.communitiesService.getInvite(id, user.id);
   }
 
   @Post(':id/leave')
@@ -90,7 +90,7 @@ export class CommunitiesController {
   async createCategory(
     @Req() req: Request,
     @Param('id') id: string,
-    @Body('name') name: string,
+    @Body() { name }: NameDto,
   ) {
     const user = await getSessionUser(req);
     return this.communitiesService.createCategory(id, user.id, name);
@@ -111,7 +111,7 @@ export class CommunitiesController {
   async createChannel(
     @Req() req: Request,
     @Param('id') id: string,
-    @Body() body: { name: string; type: 'TEXT' | 'VOICE'; categoryId?: string },
+    @Body() body: CreateChannelDto,
   ) {
     const user = await getSessionUser(req);
     return this.communitiesService.createChannel(
@@ -128,7 +128,7 @@ export class CommunitiesController {
     @Req() req: Request,
     @Param('id') id: string,
     @Param('channelId') channelId: string,
-    @Body('name') name: string,
+    @Body() { name }: NameDto,
   ) {
     const user = await getSessionUser(req);
     return this.communitiesService.renameChannel(id, user.id, channelId, name);
@@ -148,29 +148,19 @@ export class CommunitiesController {
   async sendInviteDm(
     @Req() req: Request,
     @Param('id') id: string,
-    @Body('userId') userId: string,
+    @Body() { userId }: TargetUserDto,
   ) {
     const user = await getSessionUser(req);
     return this.communitiesService.sendCommunityInviteDm(id, user.id, userId);
   }
 
-  // Membres
-  @Post(':id/members')
-  async addMember(
-    @Req() req: Request,
-    @Param('id') id: string,
-    @Body('userId') userId: string,
-  ) {
-    const user = await getSessionUser(req);
-    return this.communitiesService.addMemberDirectly(id, user.id, userId);
-  }
-
+  // Membres (l'ajout passe par le système d'invitations, voir InvitationsController)
   @Patch(':id/members/:userId/role')
   async setRole(
     @Req() req: Request,
     @Param('id') id: string,
     @Param('userId') targetUserId: string,
-    @Body('role') role: 'OWNER' | 'ADMIN' | 'MODERATOR' | 'MEMBER',
+    @Body() { role }: SetCommunityRoleDto,
   ) {
     const user = await getSessionUser(req);
     return this.communitiesService.setMemberRole(

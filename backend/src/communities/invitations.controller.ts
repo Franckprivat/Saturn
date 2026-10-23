@@ -9,11 +9,16 @@ import {
   Query,
   Req,
 } from '@nestjs/common';
-import {
-  InvitationsService,
-  type PermissionAction,
-} from './invitations.service';
+import { InvitationsService } from './invitations.service';
 import { getSessionUser } from '../auth/get-session-user';
+import {
+  BanMemberDto,
+  CreateInviteLinkDto,
+  InviteMembersDto,
+  JoinCommunityDto,
+  UpdateInviteLinkDto,
+  UpdateInviteSettingsDto,
+} from './dto/community.dto';
 import type { Request } from 'express';
 
 /**
@@ -56,7 +61,7 @@ export class InvitationsController {
   async joinViaLink(
     @Req() req: Request,
     @Param('token') token: string,
-    @Body('message') message?: string,
+    @Body() { message }: JoinCommunityDto,
   ) {
     const user = await getSessionUser(req);
     return this.invitations.joinViaToken(token, user.id, message);
@@ -73,7 +78,7 @@ export class CommunityAdminController {
   async invite(
     @Req() req: Request,
     @Param('id') id: string,
-    @Body() body: { userIds: string[]; message?: string },
+    @Body() body: InviteMembersDto,
   ) {
     const user = await getSessionUser(req);
     return this.invitations.inviteMembers(
@@ -105,12 +110,7 @@ export class CommunityAdminController {
   async createLink(
     @Req() req: Request,
     @Param('id') id: string,
-    @Body()
-    body: {
-      label?: string;
-      expiresInHours?: number | null;
-      maxUses?: number | null;
-    },
+    @Body() body: CreateInviteLinkDto,
   ) {
     const user = await getSessionUser(req);
     return this.invitations.createInviteLink(id, user.id, body);
@@ -127,7 +127,7 @@ export class CommunityAdminController {
     @Req() req: Request,
     @Param('id') id: string,
     @Param('linkId') linkId: string,
-    @Body('action') action: 'disable' | 'enable' | 'regenerate',
+    @Body() { action }: UpdateInviteLinkDto,
   ) {
     const user = await getSessionUser(req);
     return this.invitations.updateInviteLink(id, user.id, linkId, action);
@@ -181,7 +181,7 @@ export class CommunityAdminController {
   async ban(
     @Req() req: Request,
     @Param('id') id: string,
-    @Body() body: { userId: string; reason?: string },
+    @Body() body: BanMemberDto,
   ) {
     const user = await getSessionUser(req);
     return this.invitations.banMember(id, user.id, body.userId, body.reason);
@@ -222,13 +222,7 @@ export class CommunityAdminController {
   async updateSettings(
     @Req() req: Request,
     @Param('id') id: string,
-    @Body()
-    body: {
-      permissions?: Partial<
-        Record<PermissionAction, 'ADMIN' | 'MODERATOR' | 'MEMBER'>
-      >;
-      joinPolicy?: 'OPEN' | 'APPROVAL';
-    },
+    @Body() body: UpdateInviteSettingsDto,
   ) {
     const user = await getSessionUser(req);
     return this.invitations.updateSettings(id, user.id, body);

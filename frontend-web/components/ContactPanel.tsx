@@ -8,6 +8,8 @@ import { Spinner } from '@/components/Spinner';
 import { WALLPAPER_PRESETS } from '@/lib/wallpapers';
 import { BUBBLE_COLORS, bubbleGradient, getConvPrefs, setConvPrefs, type ConvPrefs } from '@/lib/convPrefs';
 import { usePresenceStore, formatLastSeen } from '@/store/presenceStore';
+import { toast } from '@/components/Toast';
+import { apiErrorMessage } from '@/lib/errors';
 
 interface ContactPanelProps {
   conversationId: string;
@@ -88,14 +90,18 @@ export function ContactPanel({
     try {
       await api.post(`/friends/block/${contact.id}`);
       router.push('/friends');
-    } catch { /* ignore */ }
+    } catch (err) {
+      toast(apiErrorMessage(err, 'Blocage impossible'), 'error');
+    }
   };
 
   const unfriendContact = async () => {
     try {
       await api.delete(`/friends/${contact.id}`);
       router.push('/friends');
-    } catch { /* ignore */ }
+    } catch (err) {
+      toast(apiErrorMessage(err, 'Suppression de l\'ami impossible'), 'error');
+    }
   };
 
   const displayName = alias || contact.nickname || contact.email?.split('@')[0] || 'Contact';
@@ -111,7 +117,7 @@ export function ContactPanel({
       {/* Header */}
       <div className="h-12 px-4 flex items-center justify-between flex-shrink-0" style={{ borderBottom: '1px solid var(--sat-border)' }}>
         <span className="text-sm font-bold" style={{ color: 'var(--sat-text)' }}>Infos du contact</span>
-        <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center transition"
+        <button aria-label="Fermer" onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center transition"
           style={{ color: 'var(--sat-muted)' }}
           onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--sat-hover)'; }}
           onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>✕</button>

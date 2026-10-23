@@ -11,9 +11,16 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
+# Mode production (rate limit better-auth, cookies, logs Nest)
+ENV NODE_ENV=production
+
+# Dossier des uploads écrit par l'utilisateur node : un volume Docker neuf
+# reprend ces droits (sinon EACCES à chaque upload, le volume étant à root)
+RUN mkdir -p uploads && chown node:node uploads
+
 # Non-root pour la sécurité
 USER node
 EXPOSE 3000
 
 # Les migrations sont appliquées avant le démarrage
-CMD sh -c "npx prisma migrate deploy && node dist/src/main.js"
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]

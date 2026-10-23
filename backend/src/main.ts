@@ -11,6 +11,14 @@ import { auth } from './auth/better-auth.instance';
 async function bootstrap() {
   const expressApp = express();
 
+  // Derrière Nginx, req.ip vaut l'IP du conteneur Nginx : sans « trust proxy »,
+  // tous les utilisateurs partagent le même quota du rate limiter.
+  // Par défaut on ne fait confiance qu'aux proxys du réseau local (Docker).
+  expressApp.set(
+    'trust proxy',
+    process.env.TRUST_PROXY ?? 'loopback, linklocal, uniquelocal',
+  );
+
   // ── CORS en tout premier — avant better-auth et body parser ───────────────
   // NestJS app.enableCors() vient trop tard (après better-auth dans la stack)
   const allowedOrigins = process.env.ALLOWED_ORIGINS

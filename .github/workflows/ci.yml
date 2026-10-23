@@ -35,8 +35,68 @@ jobs:
       - name: Lint
         run: npm run lint:ci
 
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json
+
+      # Signale les failles connues des dépendances de production sans bloquer
+      # les PR (de nouvelles alertes tombent indépendamment du code modifié)
+      - name: Audit dependencies
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
+
       - name: Unit tests
         run: npm test
+
+  backend-integration:
+    name: Backend (migrations & integration tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: saturn
+          POSTGRES_PASSWORD: saturn
+          POSTGRES_DB: saturn_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U saturn"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://saturn:saturn@localhost:5432/saturn_test
+      BETTER_AUTH_DATABASE_URL: postgresql://saturn:saturn@localhost:5432/saturn_test
+      BETTER_AUTH_SECRET: ci-integration-secret-not-for-production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      - name: Check schema matches migrations
+        run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+
+      - name: Build
+        run: npm run build
+
+      - name: Integration tests
+        run: npm run test:e2e
 
   frontend-web:
     name: Frontend web (lint & build)
@@ -63,6 +123,10 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Audit dependencies
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
 
       # Logo et images : casse exacte des noms (Linux) + non bloqués par le middleware
       - name: Check static assets
