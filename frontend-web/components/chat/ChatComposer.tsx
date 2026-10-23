@@ -137,7 +137,7 @@ export function ChatComposer({
   };
 
   return (
-    <div className="px-4 pb-6 pt-0 flex-shrink-0">
+    <div className="px-2 md:px-4 pb-[calc(0.5rem+env(safe-area-inset-bottom))] md:pb-6 pt-0 flex-shrink-0">
       {/* Typing indicator */}
       {Object.keys(typingUsers).length > 0 && (
         <div className="flex items-center gap-1.5 px-1 mb-1">
@@ -214,7 +214,7 @@ export function ChatComposer({
                   }} />
               ))}
             </div>
-            <span className="text-[11px] flex-shrink-0" style={{ color: 'var(--sat-faint)' }}>Glisse pour annuler</span>
+            <span className="hidden sm:inline text-[11px] flex-shrink-0" style={{ color: 'var(--sat-faint)' }}>Glisse pour annuler</span>
           </div>
 
           {/* Envoyer le vocal */}

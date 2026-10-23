@@ -14,6 +14,7 @@ import { getHiddenMessageIds, hideMessageForMe } from '@/lib/hiddenMessages';
 import { toast } from '@/components/Toast';
 import { SmileyIcon, ReplyIcon, EditIcon, TrashIcon, PaperclipIcon, SendIcon } from '@/components/Icons';
 import { apiErrorMessage } from '@/lib/errors';
+import { MobileBackButton } from '@/components/MobileBackButton';
 
 function dn(u: { nickname?: string | null; email?: string | null } | null | undefined) {
   if (!u) return 'Inconnu';
@@ -33,9 +34,11 @@ interface ChannelChatProps {
   channelName: string;
   socket: Socket | null;
   currentUser: { id: string } | null;
+  // Téléphone : retour à la liste des salons
+  onBack?: () => void;
 }
 
-export function ChannelChat({ conversationId, channelName, socket, currentUser }: ChannelChatProps) {
+export function ChannelChat({ conversationId, channelName, socket, currentUser, onBack }: ChannelChatProps) {
   const { messagesByConversationId, paginationByConversationId, setMessages, prependMessages } = useChatStore();
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -148,13 +151,14 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
   return (
     <div className="flex-1 flex flex-col min-w-0" style={{ background: 'var(--sat-main)' }}>
       {/* Header */}
-      <div className="h-12 px-4 flex items-center gap-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--sat-border)' }}>
+      <div className="h-14 md:h-12 pl-3 pr-14 md:px-4 flex items-center gap-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--sat-border)' }}>
+        {onBack && <MobileBackButton onClick={onBack} label="Retour aux salons" />}
         <span className="text-lg" style={{ color: 'var(--sat-faint)' }}>#</span>
-        <span className="font-bold text-[15px]" style={{ color: 'var(--sat-text)' }}>{channelName}</span>
+        <span className="font-bold text-[15px] truncate" style={{ color: 'var(--sat-text)' }}>{channelName}</span>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-0.5">
+      <div className="flex-1 overflow-y-auto px-2 md:px-4 py-4 space-y-0.5">
         {loading && <div className="flex justify-center py-10"><Spinner size={22} /></div>}
         {!loading && paginationByConversationId[conversationId]?.hasMore && (
           <div className="flex justify-center pb-2">
@@ -305,7 +309,7 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
       )}
 
       {/* Input */}
-      <div className="px-4 pb-5 pt-0 flex-shrink-0">
+      <div className="px-2 md:px-4 pb-[calc(0.5rem+env(safe-area-inset-bottom))] md:pb-5 pt-0 flex-shrink-0">
         {replyTo && (
           <div className="flex items-center gap-2 px-3 py-1.5 mb-1.5 rounded-t-xl text-xs" style={{ background: 'var(--sat-hover)', color: 'var(--sat-muted)' }}>
             Réponse à <strong style={{ color: 'var(--sat-text)' }}>{dn(replyTo.sender)}</strong>
@@ -320,7 +324,7 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
           <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { send(); setShowEmoji(false); } }}
             placeholder={`Envoyer un message dans #${channelName}`}
-            className="flex-1 py-3 text-sm bg-transparent focus:outline-none" style={{ color: 'var(--sat-text)' }} />
+            className="flex-1 min-w-0 py-3 text-sm bg-transparent focus:outline-none" style={{ color: 'var(--sat-text)' }} />
           <div className="relative">
             <button aria-label="Insérer un emoji" onClick={() => setShowEmoji((v) => !v)} className="w-8 h-8 flex items-center justify-center rounded-lg" style={{ color: 'var(--sat-faint)' }}><SmileyIcon size={19} /></button>
             {showEmoji && <EmojiPicker onSelect={(e) => setText((m) => m + e)} onClose={() => setShowEmoji(false)} />}

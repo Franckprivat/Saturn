@@ -111,11 +111,11 @@ export function ContactPanel({
   const SECTION = 'text-[10px] font-bold uppercase tracking-widest mb-2';
 
   return (
-    <aside className="flex flex-col flex-shrink-0 w-80 overflow-y-auto"
+    <aside className="fixed inset-0 z-40 md:static md:z-auto flex flex-col flex-shrink-0 w-full md:w-80 overflow-y-auto"
       style={{ background: 'var(--sat-panel)', borderLeft: '1px solid var(--sat-border)' }}>
 
       {/* Header */}
-      <div className="h-12 px-4 flex items-center justify-between flex-shrink-0" style={{ borderBottom: '1px solid var(--sat-border)' }}>
+      <div className="h-14 md:h-12 px-4 flex items-center justify-between flex-shrink-0" style={{ borderBottom: '1px solid var(--sat-border)' }}>
         <span className="text-sm font-bold" style={{ color: 'var(--sat-text)' }}>Infos du contact</span>
         <button aria-label="Fermer" onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center transition"
           style={{ color: 'var(--sat-muted)' }}

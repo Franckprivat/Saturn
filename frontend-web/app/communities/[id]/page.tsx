@@ -22,6 +22,9 @@ import { CommunityManageModal } from '@/components/communities/CommunityManageMo
 import { MicIcon, MicOffIcon, PhoneOffIcon, SpeakerIcon } from '@/components/Icons';
 import type { ChatUser } from '@/store/chatStore';
 import { apiErrorMessage } from '@/lib/errors';
+import { MobileBackButton } from '@/components/MobileBackButton';
+import { cx } from '@/components/chat/utils';
+import { useHideMobileNav } from '@/store/mobileNavStore';
 
 type MemberUser = CommunityMemberEntry['user'];
 
@@ -44,7 +47,16 @@ export default function CommunityPage() {
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const loading = loadedId !== communityId;
   const [currentChannel, setCurrentChannel] = useState<Channel | null>(null);
-  const [showMembers, setShowMembers] = useState(true);
+  // Liste des membres ouverte d'office sur ordinateur, fermée sur téléphone
+  const [showMembers, setShowMembers] = useState(
+    () => typeof window === 'undefined' || window.matchMedia('(min-width: 768px)').matches,
+  );
+  // Téléphone : liste des salons, ou salon ouvert en plein écran
+  // (lié à la communauté : changer de communauté ramène à la liste des salons)
+  const [mobileMainFor, setMobileMainFor] = useState<string | null>(null);
+  const mobileShowMain = mobileMainFor === communityId;
+  const setMobileShowMain = (show: boolean) => setMobileMainFor(show ? communityId : null);
+  useHideMobileNav(mobileShowMain);
   const [voiceUsers, setVoiceUsers] = useState<Record<string, string[]>>({});
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -117,6 +129,7 @@ export default function CommunityPage() {
 
   // ── Actions ──
   const selectChannel = (ch: Channel) => {
+    setMobileShowMain(true);
     if (ch.type === 'VOICE') {
       voice.join(ch.id);
       setCurrentChannel(ch);
@@ -200,10 +213,10 @@ export default function CommunityPage() {
     .filter((g) => g.list.length > 0);
 
   return (
-    <div className="flex flex-1 overflow-hidden" style={{ color: 'var(--sat-text)' }}>
+    <div className="relative flex flex-1 overflow-hidden min-w-0" style={{ color: 'var(--sat-text)' }}>
 
       {/* ── Rail serveurs ── */}
-      <div className="flex flex-col items-center py-3 gap-2 flex-shrink-0 overflow-y-auto scrollbar-none"
+      <div className={cx('flex-col items-center py-3 gap-2 flex-shrink-0 overflow-y-auto scrollbar-none', mobileShowMain ? 'hidden md:flex' : 'flex')}
         style={{ width: 64, background: 'var(--sat-void)', borderRight: '1px solid var(--sat-border)' }}>
         {communities.map((c) => {
           const active = c.id === communityId;
@@ -221,7 +234,7 @@ export default function CommunityPage() {
       </div>
 
       {/* ── Sidebar salons ── */}
-      <div className="flex flex-col flex-shrink-0" style={{ width: 240, background: 'var(--sat-panel)', borderRight: '1px solid var(--sat-border)' }}>
+      <div className={cx('flex-col min-w-0 flex-1 md:flex-none md:w-60 md:flex-shrink-0', mobileShowMain ? 'hidden md:flex' : 'flex')} style={{ background: 'var(--sat-panel)', borderRight: '1px solid var(--sat-border)' }}>
         {/* Header communauté */}
         <div className="relative">
           <button onClick={() => setSettingsOpen((v) => !v)}
@@ -264,7 +277,7 @@ export default function CommunityPage() {
                 <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: 'var(--sat-muted)' }}>{cat.name}</span>
                 {canManage(myRole) && (
                   <button onClick={() => setAddChannel({ categoryId: cat.id })} title="Ajouter un salon"
-                    className="text-sm opacity-0 group-hover:opacity-100 transition" style={{ color: 'var(--sat-muted)' }}>+</button>
+                    className="text-sm md:opacity-0 md:group-hover:opacity-100 transition" style={{ color: 'var(--sat-muted)' }}>+</button>
                 )}
               </div>
               {cat.channels.map((ch) => (
@@ -325,28 +338,31 @@ export default function CommunityPage() {
       </div>
 
       {/* ── Zone principale ── */}
+      <div className={cx('flex-1 min-w-0', mobileShowMain ? 'flex' : 'hidden md:flex')}>
       {currentChannel?.type === 'VOICE' ? (
-        <VoiceStage channel={currentChannel} voice={voice} userById={userById} currentUserId={currentUser?.id} />
+        <VoiceStage channel={currentChannel} voice={voice} userById={userById} currentUserId={currentUser?.id} onBack={() => setMobileShowMain(false)} />
       ) : currentChannel?.conversationId ? (
-        <ChannelChat conversationId={currentChannel.conversationId} channelName={currentChannel.name} socket={socket} currentUser={currentUser} />
+        <ChannelChat conversationId={currentChannel.conversationId} channelName={currentChannel.name} socket={socket} currentUser={currentUser} onBack={() => setMobileShowMain(false)} />
       ) : (
         <div className="flex-1 flex items-center justify-center" style={{ background: 'var(--sat-main)' }}>
           <p className="text-sm" style={{ color: 'var(--sat-muted)' }}>Sélectionne un salon pour commencer</p>
         </div>
       )}
+      </div>
 
       {/* Toggle membres */}
       <button onClick={() => setShowMembers((v) => !v)} title="Membres"
-        className="absolute top-3 right-3 z-20 w-9 h-9 rounded-lg flex items-center justify-center transition"
+        className={cx('absolute top-2.5 md:top-1.5 right-3 z-20 w-9 h-9 rounded-lg items-center justify-center transition', mobileShowMain ? 'flex' : 'hidden md:flex')}
         style={{ background: showMembers ? 'var(--sat-active)' : 'var(--sat-hover)', color: 'var(--sat-text)' }}>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>
       </button>
 
       {/* ── Membres ── */}
       {showMembers && (
-        <div className="flex flex-col flex-shrink-0 overflow-y-auto" style={{ width: 220, background: 'var(--sat-panel)', borderLeft: '1px solid var(--sat-border)' }}>
-          <div className="h-12 px-4 flex items-center justify-between flex-shrink-0" style={{ borderBottom: '1px solid var(--sat-border)' }}>
-            <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--sat-muted)' }}>Membres — {detail.members.length}</span>
+        <div className="fixed inset-0 z-30 md:static md:z-auto flex flex-col flex-shrink-0 overflow-y-auto w-full md:w-[220px]" style={{ background: 'var(--sat-panel)', borderLeft: '1px solid var(--sat-border)' }}>
+          <div className="h-14 md:h-12 px-4 flex items-center justify-between gap-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--sat-border)' }}>
+            <MobileBackButton onClick={() => setShowMembers(false)} label="Fermer la liste des membres" />
+            <span className="flex-1 text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--sat-muted)' }}>Membres — {detail.members.length}</span>
             {canAdmin(myRole) && (
               <button onClick={openInvite} title="Inviter des membres" aria-label="Inviter des membres"
                 className="w-6 h-6 rounded flex items-center justify-center transition font-bold text-sm"
@@ -461,7 +477,7 @@ function ChannelRow({ ch, active, voiceUsers, userById, canManage, onSelect, onD
         </span>
         <span className="flex-1 text-sm font-medium truncate">{ch.name}</span>
         {canManage && (
-          <button aria-label="Supprimer le salon" onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-xs opacity-0 group-hover:opacity-100 transition" style={{ color: 'var(--sat-faint)' }}>✕</button>
+          <button aria-label="Supprimer le salon" onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-xs md:opacity-0 md:group-hover:opacity-100 transition" style={{ color: 'var(--sat-faint)' }}>✕</button>
         )}
       </div>
       {/* Présence vocale */}
@@ -484,8 +500,9 @@ function ChannelRow({ ch, active, voiceUsers, userById, canManage, onSelect, onD
 }
 
 // ── Stage vocal ──
-function VoiceStage({ channel, voice, userById, currentUserId }: {
+function VoiceStage({ channel, voice, userById, currentUserId, onBack }: {
   channel: Channel; voice: ReturnType<typeof useVoiceChannel>; userById: Record<string, MemberUser>; currentUserId?: string;
+  onBack?: () => void;
 }) {
   const connected = voice.activeChannelId === channel.id;
   const peerList = Object.values(voice.peers);
@@ -496,12 +513,13 @@ function VoiceStage({ channel, voice, userById, currentUserId }: {
 
   return (
     <div className="flex-1 flex flex-col min-w-0" style={{ background: 'var(--sat-main)' }}>
-      <div className="h-12 px-4 flex items-center gap-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--sat-border)' }}>
+      <div className="h-14 md:h-12 pl-3 pr-14 md:px-4 flex items-center gap-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--sat-border)' }}>
+        {onBack && <MobileBackButton onClick={onBack} label="Retour aux salons" />}
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--sat-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07" /></svg>
         <span className="font-bold text-[15px]" style={{ color: 'var(--sat-text)' }}>{channel.name}</span>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8" style={{ background: 'var(--sat-void)' }}>
+      <div className="flex-1 flex flex-col items-center justify-center gap-6 p-4 md:p-8 overflow-y-auto" style={{ background: 'var(--sat-void)' }}>
         {!connected ? (
           <div className="text-center">
             <div className="w-20 h-20 rounded-full mx-auto mb-4 flex items-center justify-center" style={{ background: 'var(--sat-surface)', color: 'var(--sat-muted)' }}><SpeakerIcon size={34} /></div>

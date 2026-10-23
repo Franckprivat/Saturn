@@ -229,9 +229,8 @@ export function GroupPanel({
 
   return (
     <aside
-      className="flex-shrink-0 flex flex-col overflow-hidden"
+      className="fixed inset-0 z-40 md:static md:z-auto flex-shrink-0 flex flex-col overflow-hidden w-full md:w-[300px]"
       style={{
-        width: 300,
         background: 'var(--sat-surface)',
         borderLeft: '1px solid var(--sat-border)',
       }}
@@ -626,7 +625,7 @@ export function GroupPanel({
 
                   {/* Actions admin sur les autres */}
                   {canManage(p) && (
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition">
+                    <div className="flex gap-1 md:opacity-0 md:group-hover:opacity-100 focus-within:opacity-100 transition">
                       {p.role === 'MEMBER' ? (
                         <button
                           onClick={() => changeRole(p.user.id, 'ADMIN')}

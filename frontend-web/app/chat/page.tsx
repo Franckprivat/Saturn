@@ -20,7 +20,9 @@ import { ConversationList } from '@/components/chat/ConversationList';
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { MessageItem } from '@/components/chat/MessageItem';
 import { ChatComposer } from '@/components/chat/ChatComposer';
-import { getLocalAlias, setLocalAlias } from '@/components/chat/utils';
+import { MobileBackButton } from '@/components/MobileBackButton';
+import { cx, getLocalAlias, setLocalAlias } from '@/components/chat/utils';
+import { useHideMobileNav } from '@/store/mobileNavStore';
 
 type GroupPanelProps = React.ComponentProps<typeof GroupPanel>;
 interface GroupDetail {
@@ -54,6 +56,10 @@ function ChatPageContent() {
   const [error, setError] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Téléphone : une seule colonne à la fois (liste ou conversation ouverte)
+  const [mobileShowChat, setMobileShowChat] = useState(() => !!searchParams.get('conversationId'));
+  useHideMobileNav(mobileShowChat);
 
   // UI state
   const [showGroupPanel, setShowGroupPanel] = useState(false);
@@ -109,6 +115,15 @@ function ChatPageContent() {
     const fromUrl = searchParams.get('conversationId');
     setCurrentConversationId(fromUrl || conversations[0].id);
   }, [conversations, currentConversationId, searchParams]);
+
+  // Lien direct vers une conversation (amis, notifications) : on l'ouvre même
+  // si une autre était déjà sélectionnée, et en plein écran sur téléphone
+  const urlConversationId = searchParams.get('conversationId');
+  useEffect(() => {
+    if (!urlConversationId) return;
+    setCurrentConversationId(urlConversationId);
+    setMobileShowChat(true);
+  }, [urlConversationId, setCurrentConversationId]);
 
   useEffect(() => {
     if (!currentConversationId) return;
@@ -327,11 +342,12 @@ function ChatPageContent() {
         getOtherUser={getOtherUser}
         getTitle={getTitle}
         isOnline={isOnline}
-        onSelect={setCurrentConversationId}
+        onSelect={(id) => { setCurrentConversationId(id); setMobileShowChat(true); }}
+        className={mobileShowChat ? 'hidden md:flex' : 'flex'}
       />
 
       {/* ── COL 2 : Zone principale du chat ── */}
-      <section className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ background: 'var(--sat-main)' }}>
+      <section className={cx('flex-1 flex-col overflow-hidden min-w-0', mobileShowChat ? 'flex' : 'hidden md:flex')} style={{ background: 'var(--sat-main)' }}>
         {!currentConversationId ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center space-y-4">
@@ -349,8 +365,9 @@ function ChatPageContent() {
         ) : (
           <>
             {/* ── Header conversation ── */}
-            <div className="h-12 px-4 flex items-center gap-3 flex-shrink-0"
-              style={{ borderBottom: '1px solid var(--sat-border)', background: 'var(--sat-main)', boxShadow: '0 1px 0 var(--sat-border)' }}>
+            <div className="h-14 md:h-12 px-3 md:px-4 flex items-center gap-2 md:gap-3 flex-shrink-0"
+              style={{ borderBottom: '1px solid var(--sat-border)', background: 'var(--sat-main)', boxShadow: '0 1px 0 var(--sat-border)', paddingTop: 'env(safe-area-inset-top)' }}>
+              <MobileBackButton onClick={() => setMobileShowChat(false)} label="Retour aux conversations" />
               {currentConv && (
                 <ChatHeader
                   currentConv={currentConv}
@@ -366,7 +383,7 @@ function ChatPageContent() {
               )}
             </div>
 
-            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-0.5"
+            <div className="flex-1 overflow-y-auto px-3 md:px-5 py-4 space-y-0.5"
               style={wallpaperStyle(convPrefs.wallpaper !== undefined ? convPrefs.wallpaper : wallpaper)}>
               {error && (
                 <div className="mx-1 mb-3 px-3 py-2 rounded-lg text-xs" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#EF4444' }}>

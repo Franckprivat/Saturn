@@ -64,16 +64,16 @@ export default function CommunitiesHomePage() {
 
   return (
     <div className="flex-1 overflow-y-auto" style={{ background: 'var(--sat-main)' }}>
-      <div className="max-w-3xl mx-auto px-6 py-10">
-        <div className="flex items-center justify-between mb-8">
-          <div>
+      <div className="max-w-3xl mx-auto px-4 md:px-6 py-6 md:py-10">
+        <div className="flex items-center justify-between gap-3 mb-6 md:mb-8">
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold" style={{ color: 'var(--sat-text)' }}>Communautés</h1>
             <p className="text-sm mt-1" style={{ color: 'var(--sat-muted)' }}>Tes serveurs et espaces communautaires.</p>
           </div>
           <button onClick={() => setShowCreate(true)}
-            className="px-4 py-2.5 rounded-xl text-sm font-bold text-white transition hover:opacity-90"
+            className="px-4 py-2.5 rounded-xl text-sm font-bold text-white transition hover:opacity-90 whitespace-nowrap flex-shrink-0"
             style={{ background: 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
-            + Créer / Rejoindre
+            + Créer<span className="hidden sm:inline"> / Rejoindre</span>
           </button>
         </div>
 
@@ -84,7 +84,7 @@ export default function CommunitiesHomePage() {
               Invitations reçues — {invites.length}
             </p>
             {invites.map((inv) => (
-              <div key={inv.id} className="flex items-center gap-3 p-3 rounded-2xl"
+              <div key={inv.id} className="flex flex-wrap sm:flex-nowrap items-center gap-3 p-3 rounded-2xl"
                 style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-accent)', boxShadow: '0 4px 16px var(--sat-accent-glow)' }}>
                 <div className="w-11 h-11 rounded-xl flex items-center justify-center text-lg font-bold text-white flex-shrink-0 overflow-hidden"
                   style={{ background: inv.community.image ? 'transparent' : 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
@@ -100,7 +100,7 @@ export default function CommunitiesHomePage() {
                     {inv.message ? ` · « ${inv.message} »` : ''}
                   </p>
                 </div>
-                <div className="flex gap-1.5 flex-shrink-0">
+                <div className="flex gap-1.5 flex-shrink-0 w-full sm:w-auto justify-end">
                   <button onClick={() => respondInvite(inv.id, true)} disabled={respondingId === inv.id}
                     className="px-3.5 py-2 rounded-xl text-xs font-bold text-white transition hover:opacity-90 disabled:opacity-50"
                     style={{ background: '#10B981' }}>Accepter</button>
@@ -118,7 +118,7 @@ export default function CommunitiesHomePage() {
           <input value={code} onChange={(e) => setCode(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') joinWithCode(); }}
             placeholder="Rejoindre avec un code d'invitation…"
-            className="flex-1 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none"
+            className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none"
             style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)', color: 'var(--sat-text)' }} />
           <button onClick={joinWithCode} disabled={!code.trim()}
             className="px-4 py-2.5 rounded-xl text-sm font-bold transition disabled:opacity-40"
@@ -141,7 +141,7 @@ export default function CommunitiesHomePage() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4">
             {communities.map((c: CommunitySummary) => (
               <button key={c.id} onClick={() => router.push(`/communities/${c.id}`)}
                 className="flex flex-col items-center gap-3 p-5 rounded-2xl transition hover:scale-[1.03]"
@@ -151,7 +151,7 @@ export default function CommunitiesHomePage() {
                   {c.image ? <img src={mediaUrl(c.image)} loading="lazy" className="w-full h-full object-cover" alt="" /> : c.name.charAt(0).toUpperCase()}
                 </div>
                 <div className="text-center">
-                  <p className="text-sm font-bold truncate max-w-[140px]" style={{ color: 'var(--sat-text)' }}>{c.name}</p>
+                  <p className="text-sm font-bold truncate max-w-[120px] sm:max-w-[140px]" style={{ color: 'var(--sat-text)' }}>{c.name}</p>
                   <p className="text-[11px]" style={{ color: 'var(--sat-muted)' }}>{c.memberCount} membre{c.memberCount > 1 ? 's' : ''}</p>
                 </div>
               </button>

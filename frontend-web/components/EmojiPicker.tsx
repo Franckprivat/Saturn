@@ -95,8 +95,8 @@ export function EmojiPicker({ onSelect, onClose }: EmojiPickerProps) {
     // Panneau horizontal rectangulaire large
     <div
       ref={ref}
-      className="absolute bottom-14 left-0 z-50 bg-white border border-slate-200 rounded-2xl shadow-2xl shadow-slate-300/50 overflow-hidden"
-      style={{ width: 480, maxWidth: '90vw' }}
+      // Téléphone : panneau pleine largeur au-dessus du clavier ; ordinateur : sous le bouton
+      className="fixed left-2 right-2 bottom-[calc(72px+env(safe-area-inset-bottom))] md:absolute md:bottom-14 md:left-0 md:right-auto md:w-[480px] md:max-w-[90vw] z-50 bg-white border border-slate-200 rounded-2xl shadow-2xl shadow-slate-300/50 overflow-hidden"
     >
       {/* Barre de recherche */}
       <div className="px-3 pt-3 pb-2">

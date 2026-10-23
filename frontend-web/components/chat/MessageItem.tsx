@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { ChatMessage, Conversation, MessageReaction } from '@/store/chatStore';
 import { Avatar } from '@/components/Avatar';
 import { FilePreview } from '@/components/media/FilePreview';
@@ -34,6 +35,8 @@ export function MessageItem({
   isEditing, editContent, setEditContent, setEditingId, submitEdit,
   reactionPicker, setReactionPicker, toggleReaction, onReply, setDeleteTarget,
 }: Props) {
+// Téléphone (pas de survol) : un appui sur la bulle affiche les actions
+const [showActions, setShowActions] = useState(false);
 if (msg.type === 'SYSTEM') {
   return (
     <div className="flex items-center justify-center gap-2 my-2">
@@ -73,7 +76,7 @@ return (
       </div>
     )}
 
-    <div className={cx('flex flex-col max-w-[68%]', isMe ? 'items-end' : 'items-start')}>
+    <div className={cx('flex flex-col max-w-[80%] md:max-w-[68%]', isMe ? 'items-end' : 'items-start')}>
       {/* Nom de l'expéditeur (groupes, premiers msgs) */}
       {!isMe && !samePrev && currentConv?.type === 'GROUP' && (
         <span className="text-[11px] font-semibold px-1 mb-1" style={{ color: 'var(--sat-accent)' }}>
@@ -106,7 +109,8 @@ return (
       )}
 
       {/* Bulle + actions */}
-      <div className={cx('flex items-center gap-1.5', isMe ? 'flex-row-reverse' : 'flex-row')}>
+      <div className={cx('flex items-center gap-1.5 min-w-0', isMe ? 'flex-row-reverse' : 'flex-row')}
+        onClick={() => setShowActions((v) => !v)}>
         {/* Bulle */}
         {isDeleted ? (
           <div className="px-3.5 py-2 text-sm italic flex items-center gap-1.5"
@@ -114,7 +118,7 @@ return (
             Message supprimé
           </div>
         ) : isEditing ? (
-          <div className="flex items-center gap-2" style={{ minWidth: 220 }}>
+          <div className="flex items-center gap-2" style={{ minWidth: 'min(220px, 60vw)' }} onClick={(e) => e.stopPropagation()}>
             <input autoFocus value={editContent} onChange={(e) => setEditContent(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') submitEdit(); if (e.key === 'Escape') setEditingId(null); }}
               className="flex-1 px-3 py-1.5 rounded-xl text-sm focus:outline-none"
@@ -165,14 +169,20 @@ return (
 
         {/* Actions au survol : réagir / répondre / modifier / supprimer */}
         {!isDeleted && !isEditing && (
-          <div className="opacity-0 group-hover/msg:opacity-100 transition-opacity flex items-center gap-0.5 flex-shrink-0 rounded-lg px-0.5"
+          <div className={cx(
+              'transition-opacity items-center gap-0.5 flex-shrink-0 rounded-lg px-0.5 md:group-hover/msg:opacity-100',
+              showActions ? 'flex' : 'hidden md:flex md:opacity-0',
+            )}
+            onClick={(e) => e.stopPropagation()}
             style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)' }}>
             <div className="relative">
               <button onClick={() => setReactionPicker(reactionPicker === msg.id ? null : msg.id)}
-                className="w-6 h-6 rounded flex items-center justify-center text-[13px]"
+                className="w-8 h-8 md:w-6 md:h-6 rounded flex items-center justify-center text-[13px]"
                 style={{ color: 'var(--sat-muted)' }} title="Réagir"><SmileyIcon size={13} /></button>
               {reactionPicker === msg.id && (
-                <div className={cx('absolute bottom-7 flex gap-0.5 p-1.5 rounded-xl shadow-xl z-30', isMe ? 'right-0' : 'left-0')}
+                <div className={cx('absolute bottom-7 flex gap-0.5 p-1.5 rounded-xl shadow-xl z-30',
+                  // Téléphone : s'ouvre vers le centre de l'écran pour ne pas déborder
+                  isMe ? 'left-0 md:left-auto md:right-0' : 'right-0 md:right-auto md:left-0')}
                   style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)' }}>
                   {QUICK_REACTIONS.map((e) => (
                     <button key={e} onClick={() => toggleReaction(msg.id, e)}
@@ -182,7 +192,7 @@ return (
               )}
             </div>
             <button onClick={() => onReply(msg)}
-              className="w-6 h-6 rounded flex items-center justify-center"
+              className="w-8 h-8 md:w-6 md:h-6 rounded flex items-center justify-center"
               style={{ color: 'var(--sat-muted)' }} title="Répondre">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="9 17 4 12 9 7" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" />
@@ -190,7 +200,7 @@ return (
             </button>
             {isMe && !msg.fileUrl && msg.type !== 'INVITE' && (
               <button onClick={() => { setEditingId(msg.id); setEditContent(msg.content); }}
-                className="w-6 h-6 rounded flex items-center justify-center"
+                className="w-8 h-8 md:w-6 md:h-6 rounded flex items-center justify-center"
                 style={{ color: 'var(--sat-muted)' }} title="Modifier">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
                   <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
@@ -198,7 +208,7 @@ return (
               </button>
             )}
             <button onClick={() => setDeleteTarget(msg)}
-              className="w-6 h-6 rounded flex items-center justify-center"
+              className="w-8 h-8 md:w-6 md:h-6 rounded flex items-center justify-center"
               style={{ color: isMe ? '#EF4444' : 'var(--sat-muted)' }} title="Supprimer">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" />
