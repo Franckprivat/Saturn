@@ -268,12 +268,10 @@ CI runs lint + tests on every push via GitHub Actions.
 
 ## Author
 
-**Franck** <!-- TODO: nom complet --> — _Looking for a work-study (alternance) in software development._
+**Franck Privat KIEMDE** — _Looking for a work-study (alternance) in software development._
 
 [![GitHub](https://img.shields.io/badge/GitHub-181717?logo=github&logoColor=white)](https://github.com/Franckprivat)
-<!-- TODO: badge LinkedIn
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?logo=linkedin&logoColor=white)](https://linkedin.com/in/TON-PROFIL)
--->
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/franck-k-35451418a/)
 
 ---
 
