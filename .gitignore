@@ -17,6 +17,9 @@ out/
 *.log
 npm-debug.log*
 
+# Expo (dossier local créé à la racine par la CLI)
+.expo/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -10,9 +10,11 @@ function validateImageUrl(url: string | null | undefined): string | null {
     throw new BadRequestException('URL image invalide');
   }
   // Accepté : upload interne (relatif) ou URL http(s) absolue (DiceBear, R2…)
-  if (/^\/uploads\/[\w.\-]+$/.test(trimmed)) return trimmed;
+  if (/^\/uploads\/[\w.-]+$/.test(trimmed)) return trimmed;
   if (!/^https?:\/\//i.test(trimmed)) {
-    throw new BadRequestException('URL image invalide : /uploads/… ou http(s) uniquement');
+    throw new BadRequestException(
+      'URL image invalide : /uploads/… ou http(s) uniquement',
+    );
   }
   return trimmed;
 }
@@ -58,14 +60,17 @@ export class UsersService {
     });
   }
 
-  updateUser(id: string, data: {
-    nickname?: string;
-    bio?: string;
-    socialLinks?: Record<string, string>;
-    avatarColor?: string;
-    image?: string | null;
-    chatWallpaper?: string | null;
-  }) {
+  updateUser(
+    id: string,
+    data: {
+      nickname?: string;
+      bio?: string;
+      socialLinks?: Record<string, string>;
+      avatarColor?: string;
+      image?: string | null;
+      chatWallpaper?: string | null;
+    },
+  ) {
     // Sanitiser les champs texte
     const nickname = data.nickname?.trim().slice(0, 50) || undefined;
     const bio = data.bio?.trim().slice(0, 300) || undefined;
@@ -76,8 +81,9 @@ export class UsersService {
       const w = data.chatWallpaper;
       if (w === null || w === '') chatWallpaper = null;
       else if (/^preset:[a-z0-9-]{1,50}$/i.test(w!)) chatWallpaper = w;
-      else if (w!.startsWith('url:')) chatWallpaper = `url:${validateImageUrl(w!.slice(4))}`;
-      else throw new BadRequestException('Fond d\'écran invalide');
+      else if (w!.startsWith('url:'))
+        chatWallpaper = `url:${validateImageUrl(w!.slice(4))}`;
+      else throw new BadRequestException("Fond d'écran invalide");
     }
 
     return this.prisma.user.update({

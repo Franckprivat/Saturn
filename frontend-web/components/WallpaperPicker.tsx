@@ -83,7 +83,7 @@ export function WallpaperPicker({ value, onChange }: WallpaperPickerProps) {
         <div className="absolute right-0 top-10 z-40 w-72 rounded-2xl p-4 shadow-2xl"
           style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)' }}>
           <p className="text-[11px] font-bold uppercase tracking-widest mb-3" style={{ color: 'var(--sat-muted)' }}>
-            Fond d'écran
+            Fond d&apos;écran
           </p>
 
           <div className="grid grid-cols-3 gap-2">

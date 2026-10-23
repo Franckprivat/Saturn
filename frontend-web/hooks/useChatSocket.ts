@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { authClient } from '@/lib/auth-client';
 import { usePresenceStore } from '@/store/presenceStore';
-import { useNotificationStore } from '@/store/notificationStore';
+import { useNotificationStore, type AppNotification } from '@/store/notificationStore';
 
 let socketSingleton: Socket | null = null;
 let consumerCount = 0;
@@ -21,7 +21,7 @@ export function useChatSocket() {
     const connect = async () => {
       // Si l'API est momentanément indisponible (redémarrage du backend),
       // on réessaie au lieu de rester définitivement sans temps réel.
-      const { data } = await authClient.getSession().catch(() => ({ data: null as any }));
+      const { data } = await authClient.getSession().catch(() => ({ data: null }));
       if (!mounted) return;
       if (!data?.session) {
         retryTimer = setTimeout(connect, 4000);
@@ -44,7 +44,7 @@ export function useChatSocket() {
           setOffline(userId, lastSeenAt);
         });
 
-        socketSingleton.on('notification', (data: any) => {
+        socketSingleton.on('notification', (data: Omit<AppNotification, 'id' | 'read'>) => {
           useNotificationStore.getState().add(data);
           // Notification système quand l'onglet n'est pas visible (façon WhatsApp Web)
           if (

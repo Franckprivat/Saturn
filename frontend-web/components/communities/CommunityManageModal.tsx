@@ -5,12 +5,27 @@ import { api } from '@/lib/api';
 import { Avatar } from '@/components/Avatar';
 import { Spinner } from '@/components/Spinner';
 import { toast } from '@/components/Toast';
+import { apiErrorMessage } from '@/lib/errors';
 
 interface CommunityManageModalProps {
   communityId: string;
   communityName: string;
   onClose: () => void;
 }
+
+type UserRef = { id: string; nickname?: string | null; email?: string | null; image?: string | null; avatarColor?: string | null };
+
+interface LinkRow {
+  id: string; token: string; state: string; uses: number; maxUses?: number | null;
+  expiresAt?: string | null; createdAt: string; creator?: UserRef | null;
+  joins: { id: string; joinedAt: string; user: UserRef }[];
+}
+interface InviteRow { id: string; status: string; createdAt: string; invitee: UserRef; inviter?: UserRef | null }
+interface RequestRow { id: string; message?: string | null; user: UserRef & { createdAt: string; bio?: string | null }; mutualFriends: UserRef[]; mutualFriendsCount: number }
+interface BanRow { id: string; createdAt: string; reason?: string | null; user: UserRef }
+interface AuditRow { id: string; action: string; createdAt: string; actor?: UserRef | null; target?: UserRef | null }
+interface PermissionSettings { joinPolicy: 'OPEN' | 'APPROVAL'; permissions: Record<string, string> }
+type TabData = LinkRow[] | InviteRow[] | RequestRow[] | BanRow[] | AuditRow[] | PermissionSettings;
 
 type Tab = 'links' | 'invites' | 'requests' | 'bans' | 'audit' | 'permissions';
 
@@ -76,7 +91,7 @@ const ROLE_OPTIONS = [
 function fmtDate(d: string) {
   return new Date(d).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
-function dn(u: any) {
+function dn(u: { nickname?: string | null; email?: string | null } | null | undefined) {
   return u?.nickname?.trim() || u?.email?.split('@')[0] || 'Inconnu';
 }
 
@@ -88,7 +103,7 @@ function dn(u: any) {
 export function CommunityManageModal({ communityId, communityName, onClose }: CommunityManageModalProps) {
   const [tab, setTab] = useState<Tab>('links');
   const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<TabData | null>(null);
   const [expandedLink, setExpandedLink] = useState<string | null>(null);
 
   const load = useCallback(async (which: Tab) => {
@@ -104,9 +119,9 @@ export function CommunityManageModal({ communityId, communityName, onClose }: Co
       }[which];
       const res = await api.get(url);
       setData(res.data);
-    } catch (e: any) {
+    } catch (e) {
       setData(null);
-      toast(e?.response?.data?.message || 'Accès refusé', 'error');
+      toast(apiErrorMessage(e, 'Accès refusé'), 'error');
     } finally {
       setLoading(false);
     }
@@ -129,28 +144,28 @@ export function CommunityManageModal({ communityId, communityName, onClose }: Co
         await api.patch(`/communities/${communityId}/invite-links/${linkId}`, { action });
       }
       load('links');
-    } catch (e: any) { toast(e?.response?.data?.message || 'Action refusée', 'error'); }
+    } catch (e) { toast(apiErrorMessage(e, 'Action refusée'), 'error'); }
   };
 
   const cancelInvite = async (inviteId: string) => {
     try {
       await api.delete(`/communities/${communityId}/invitations/${inviteId}`);
       load('invites');
-    } catch (e: any) { toast(e?.response?.data?.message || 'Action refusée', 'error'); }
+    } catch (e) { toast(apiErrorMessage(e, 'Action refusée'), 'error'); }
   };
 
   const respondRequest = async (requestId: string, approve: boolean) => {
     try {
       await api.post(`/communities/${communityId}/join-requests/${requestId}/${approve ? 'approve' : 'reject'}`);
       load('requests');
-    } catch (e: any) { toast(e?.response?.data?.message || 'Action refusée', 'error'); }
+    } catch (e) { toast(apiErrorMessage(e, 'Action refusée'), 'error'); }
   };
 
   const unban = async (userId: string) => {
     try {
       await api.delete(`/communities/${communityId}/bans/${userId}`);
       load('bans');
-    } catch (e: any) { toast(e?.response?.data?.message || 'Action refusée', 'error'); }
+    } catch (e) { toast(apiErrorMessage(e, 'Action refusée'), 'error'); }
   };
 
   const setPermission = async (action: string, role: string) => {
@@ -159,14 +174,14 @@ export function CommunityManageModal({ communityId, communityName, onClose }: Co
         permissions: { [action]: role },
       });
       setData(res.data);
-    } catch (e: any) { toast(e?.response?.data?.message || 'Réservé aux administrateurs', 'error'); }
+    } catch (e) { toast(apiErrorMessage(e, 'Réservé aux administrateurs'), 'error'); }
   };
 
   const setJoinPolicy = async (joinPolicy: 'OPEN' | 'APPROVAL') => {
     try {
       const res = await api.patch(`/communities/${communityId}/invite-settings`, { joinPolicy });
       setData(res.data);
-    } catch (e: any) { toast(e?.response?.data?.message || 'Réservé aux administrateurs', 'error'); }
+    } catch (e) { toast(apiErrorMessage(e, 'Réservé aux administrateurs'), 'error'); }
   };
 
   const copyLink = async (token: string) => {
@@ -217,19 +232,19 @@ export function CommunityManageModal({ communityId, communityName, onClose }: Co
             <div className="flex justify-center py-16"><Spinner size={24} /></div>
           ) : !data ? (
             <p className="text-sm text-center py-16" style={{ color: 'var(--sat-muted)' }}>
-              Tu n'as pas la permission de consulter cette section.
+              Tu n&apos;as pas la permission de consulter cette section.
             </p>
           ) : (
             <>
               {/* ── Liens ── */}
               {tab === 'links' && (
                 <div className="space-y-2">
-                  {data.length === 0 && (
+                  {(data as unknown[]).length === 0 && (
                     <p className="text-sm text-center py-12" style={{ color: 'var(--sat-muted)' }}>
-                      Aucun lien d'invitation. Crée-en un depuis « Inviter des gens ».
+                      Aucun lien d&apos;invitation. Crée-en un depuis « Inviter des gens ».
                     </p>
                   )}
-                  {data.map((l: any) => {
+                  {(data as LinkRow[]).map((l) => {
                     const state = LINK_STATE_LABELS[l.state] ?? LINK_STATE_LABELS.active;
                     return (
                       <div key={l.id} className="rounded-xl p-3"
@@ -271,8 +286,8 @@ export function CommunityManageModal({ communityId, communityName, onClose }: Co
                         </div>
                         {expandedLink === l.id && (
                           <div className="mt-2 pt-2 space-y-1" style={{ borderTop: '1px solid var(--sat-border)' }}>
-                            {l.joins.length === 0 && <p className="text-[11px]" style={{ color: 'var(--sat-faint)' }}>Personne n'a encore rejoint via ce lien.</p>}
-                            {l.joins.map((j: any) => (
+                            {l.joins.length === 0 && <p className="text-[11px]" style={{ color: 'var(--sat-faint)' }}>Personne n&apos;a encore rejoint via ce lien.</p>}
+                            {l.joins.map((j) => (
                               <div key={j.id} className="flex items-center gap-2">
                                 <Avatar user={j.user} size="xs" />
                                 <span className="text-xs font-semibold" style={{ color: 'var(--sat-text)' }}>{dn(j.user)}</span>
@@ -290,10 +305,10 @@ export function CommunityManageModal({ communityId, communityName, onClose }: Co
               {/* ── Invitations ── */}
               {tab === 'invites' && (
                 <div className="space-y-1.5">
-                  {data.length === 0 && (
+                  {(data as unknown[]).length === 0 && (
                     <p className="text-sm text-center py-12" style={{ color: 'var(--sat-muted)' }}>Aucune invitation envoyée.</p>
                   )}
-                  {data.map((i: any) => {
+                  {(data as InviteRow[]).map((i) => {
                     const st = INVITE_STATUS_LABELS[i.status] ?? INVITE_STATUS_LABELS.PENDING;
                     return (
                       <div key={i.id} className="flex items-center gap-3 px-3 py-2 rounded-xl"
@@ -320,13 +335,13 @@ export function CommunityManageModal({ communityId, communityName, onClose }: Co
               {/* ── Demandes d'adhésion ── */}
               {tab === 'requests' && (
                 <div className="space-y-2">
-                  {data.length === 0 && (
+                  {(data as unknown[]).length === 0 && (
                     <p className="text-sm text-center py-12" style={{ color: 'var(--sat-muted)' }}>
                       Aucune demande en attente.<br />
-                      <span className="text-xs">Les demandes apparaissent quand la politique d'adhésion est « sur approbation ».</span>
+                      <span className="text-xs">Les demandes apparaissent quand la politique d&apos;adhésion est « sur approbation ».</span>
                     </p>
                   )}
-                  {data.map((r: any) => (
+                  {(data as RequestRow[]).map((r) => (
                     <div key={r.id} className="rounded-xl p-3" style={{ background: 'var(--sat-hover)', border: '1px solid var(--sat-border)' }}>
                       <div className="flex items-center gap-3">
                         <Avatar user={r.user} size="md" />
@@ -364,10 +379,10 @@ export function CommunityManageModal({ communityId, communityName, onClose }: Co
               {/* ── Bannis ── */}
               {tab === 'bans' && (
                 <div className="space-y-1.5">
-                  {data.length === 0 && (
+                  {(data as unknown[]).length === 0 && (
                     <p className="text-sm text-center py-12" style={{ color: 'var(--sat-muted)' }}>Aucun membre banni.</p>
                   )}
-                  {data.map((b: any) => (
+                  {(data as BanRow[]).map((b) => (
                     <div key={b.id} className="flex items-center gap-3 px-3 py-2 rounded-xl" style={{ background: 'var(--sat-hover)' }}>
                       <Avatar user={b.user} size="sm" />
                       <div className="flex-1 min-w-0">
@@ -387,10 +402,10 @@ export function CommunityManageModal({ communityId, communityName, onClose }: Co
               {/* ── Journal ── */}
               {tab === 'audit' && (
                 <div className="space-y-1">
-                  {data.length === 0 && (
+                  {(data as unknown[]).length === 0 && (
                     <p className="text-sm text-center py-12" style={{ color: 'var(--sat-muted)' }}>Journal vide.</p>
                   )}
-                  {data.map((e: any) => (
+                  {(data as AuditRow[]).map((e) => (
                     <div key={e.id} className="flex items-center gap-2.5 px-3 py-2 rounded-lg" style={{ background: 'var(--sat-hover)' }}>
                       <Avatar user={e.actor ?? {}} size="xs" />
                       <p className="flex-1 text-xs min-w-0" style={{ color: 'var(--sat-text)' }}>
@@ -409,17 +424,17 @@ export function CommunityManageModal({ communityId, communityName, onClose }: Co
                 <div className="space-y-4">
                   <div>
                     <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--sat-muted)' }}>
-                      Politique d'adhésion via lien
+                      Politique d&apos;adhésion via lien
                     </p>
                     <div className="flex gap-2">
                       {([['OPEN', 'Entrée directe', 'Un lien valide suffit pour rejoindre'], ['APPROVAL', 'Sur approbation', 'Le lien crée une demande à valider']] as const).map(([value, label, hint]) => (
                         <button key={value} onClick={() => setJoinPolicy(value)}
                           className="flex-1 p-3 rounded-xl text-left transition"
                           style={{
-                            background: data.joinPolicy === value ? 'rgba(37,99,235,0.08)' : 'var(--sat-hover)',
-                            border: `1.5px solid ${data.joinPolicy === value ? 'var(--sat-accent)' : 'transparent'}`,
+                            background: (data as PermissionSettings).joinPolicy === value ? 'rgba(37,99,235,0.08)' : 'var(--sat-hover)',
+                            border: `1.5px solid ${(data as PermissionSettings).joinPolicy === value ? 'var(--sat-accent)' : 'transparent'}`,
                           }}>
-                          <p className="text-sm font-bold" style={{ color: data.joinPolicy === value ? 'var(--sat-accent)' : 'var(--sat-text)' }}>{label}</p>
+                          <p className="text-sm font-bold" style={{ color: (data as PermissionSettings).joinPolicy === value ? 'var(--sat-accent)' : 'var(--sat-text)' }}>{label}</p>
                           <p className="text-[11px] mt-0.5" style={{ color: 'var(--sat-muted)' }}>{hint}</p>
                         </button>
                       ))}
@@ -435,7 +450,7 @@ export function CommunityManageModal({ communityId, communityName, onClose }: Co
                         <div key={action} className="flex items-center gap-3 px-3 py-2 rounded-xl" style={{ background: 'var(--sat-hover)' }}>
                           <span className="flex-1 text-sm" style={{ color: 'var(--sat-text)' }}>{label}</span>
                           <select
-                            value={data.permissions[action]}
+                            value={(data as PermissionSettings).permissions[action]}
                             onChange={(e) => setPermission(action, e.target.value)}
                             className="text-xs font-semibold rounded-lg px-2 py-1.5 focus:outline-none"
                             style={{ background: 'var(--sat-surface)', color: 'var(--sat-accent)', border: '1px solid var(--sat-border-2)' }}>

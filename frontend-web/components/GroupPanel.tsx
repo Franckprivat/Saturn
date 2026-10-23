@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { mediaUrl } from '@/lib/media';
 import { Avatar } from './Avatar';
+import type { ChatUser } from '@/store/chatStore';
 
 interface Member {
   id: string;
@@ -30,7 +31,7 @@ interface GroupPanelProps {
   participants: Member[];
   attachments: Attachment[];
   currentUserId: string;
-  friends: any[];
+  friends: ChatUser[];
   onClose: () => void;
   onUpdated: () => void;
   onLeft?: () => void;
@@ -374,7 +375,7 @@ export function GroupPanel({
             {isAdmin && (
               <div className="space-y-2 pt-2" style={{ borderTop: '1px solid var(--sat-border)' }}>
                 <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--sat-muted)' }}>
-                  Lien d'invitation
+                  Lien d&apos;invitation
                 </p>
                 {!inviteLink ? (
                   <button

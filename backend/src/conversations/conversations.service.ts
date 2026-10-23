@@ -1,4 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { FriendsService } from '../friends/friends.service';
@@ -72,8 +77,13 @@ export class ConversationsService {
   }
 
   /** Ne garde que les utilisateurs réellement amis avec `userId` (anti-spam). */
-  private async filterToFriends(userId: string, candidateIds: string[]): Promise<string[]> {
-    const unique = Array.from(new Set(candidateIds)).filter((id) => id && id !== userId);
+  private async filterToFriends(
+    userId: string,
+    candidateIds: string[],
+  ): Promise<string[]> {
+    const unique = Array.from(new Set(candidateIds)).filter(
+      (id) => id && id !== userId,
+    );
     if (!unique.length) return [];
     const friendships = await this.prisma.friendship.findMany({
       where: {
@@ -86,15 +96,22 @@ export class ConversationsService {
       select: { requesterId: true, addresseeId: true },
     });
     const friendIds = new Set(
-      friendships.map((f) => (f.requesterId === userId ? f.addresseeId : f.requesterId)),
+      friendships.map((f) =>
+        f.requesterId === userId ? f.addresseeId : f.requesterId,
+      ),
     );
     return unique.filter((id) => friendIds.has(id));
   }
 
-  async createGroupConversation(creatorId: string, name: string, memberIds: string[]) {
+  async createGroupConversation(
+    creatorId: string,
+    name: string,
+    memberIds: string[],
+  ) {
     if (!name?.trim()) throw new BadRequestException('Nom du groupe requis');
     const friendMembers = await this.filterToFriends(creatorId, memberIds);
-    if (!friendMembers.length) throw new BadRequestException('Ajoute au moins un ami au groupe');
+    if (!friendMembers.length)
+      throw new BadRequestException('Ajoute au moins un ami au groupe');
     const uniqueUserIds = [creatorId, ...friendMembers];
     return this.prisma.conversation.create({
       data: {
@@ -125,7 +142,11 @@ export class ConversationsService {
     });
   }
 
-  async addMembers(conversationId: string, userId: string, memberIds: string[]) {
+  async addMembers(
+    conversationId: string,
+    userId: string,
+    memberIds: string[],
+  ) {
     await this.ensureAdmin(conversationId, userId);
     const friendMembers = await this.filterToFriends(userId, memberIds);
     const existing = await this.prisma.conversationParticipant.findMany({
@@ -136,7 +157,11 @@ export class ConversationsService {
     const toAdd = friendMembers.filter((id) => !existingIds.has(id));
     if (toAdd.length > 0) {
       await this.prisma.conversationParticipant.createMany({
-        data: toAdd.map((memberId) => ({ userId: memberId, conversationId, role: 'MEMBER' })),
+        data: toAdd.map((memberId) => ({
+          userId: memberId,
+          conversationId,
+          role: 'MEMBER',
+        })),
       });
     }
     return this.prisma.conversation.findUnique({
@@ -145,7 +170,12 @@ export class ConversationsService {
     });
   }
 
-  async setMemberRole(conversationId: string, requesterId: string, targetUserId: string, role: 'ADMIN' | 'MEMBER') {
+  async setMemberRole(
+    conversationId: string,
+    requesterId: string,
+    targetUserId: string,
+    role: 'ADMIN' | 'MEMBER',
+  ) {
     await this.ensureAdmin(conversationId, requesterId);
     return this.prisma.conversationParticipant.updateMany({
       where: { conversationId, userId: targetUserId },
@@ -153,14 +183,21 @@ export class ConversationsService {
     });
   }
 
-  async removeMember(conversationId: string, requesterId: string, targetUserId: string) {
+  async removeMember(
+    conversationId: string,
+    requesterId: string,
+    targetUserId: string,
+  ) {
     await this.ensureAdmin(conversationId, requesterId);
     return this.prisma.conversationParticipant.deleteMany({
       where: { conversationId, userId: targetUserId },
     });
   }
 
-  async isUserInConversation(userId: string, conversationId: string): Promise<boolean> {
+  async isUserInConversation(
+    userId: string,
+    conversationId: string,
+  ): Promise<boolean> {
     const count = await this.prisma.conversationParticipant.count({
       where: { userId, conversationId },
     });
@@ -184,7 +221,9 @@ export class ConversationsService {
     return this.prisma.conversation.create({
       data: {
         type: 'DM',
-        participants: { create: [{ userId: currentUserId }, { userId: otherUserId }] },
+        participants: {
+          create: [{ userId: currentUserId }, { userId: otherUserId }],
+        },
       },
       include: { participants: PARTICIPANTS_INCLUDE },
     });
@@ -193,16 +232,25 @@ export class ConversationsService {
   async generateInviteLink(conversationId: string, userId: string) {
     await this.ensureAdmin(conversationId, userId);
     const token = randomBytes(16).toString('hex');
-    await this.prisma.conversation.update({ where: { id: conversationId }, data: { inviteToken: token } });
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { inviteToken: token },
+    });
     return { token };
   }
 
   async joinByInvite(token: string, userId: string) {
-    const conv = await this.prisma.conversation.findUnique({ where: { inviteToken: token } });
+    const conv = await this.prisma.conversation.findUnique({
+      where: { inviteToken: token },
+    });
     if (!conv) throw new NotFoundException('Lien invalide ou expiré');
-    const already = await this.prisma.conversationParticipant.count({ where: { conversationId: conv.id, userId } });
+    const already = await this.prisma.conversationParticipant.count({
+      where: { conversationId: conv.id, userId },
+    });
     if (!already) {
-      await this.prisma.conversationParticipant.create({ data: { conversationId: conv.id, userId, role: 'MEMBER' } });
+      await this.prisma.conversationParticipant.create({
+        data: { conversationId: conv.id, userId, role: 'MEMBER' },
+      });
     }
     return conv;
   }
@@ -212,12 +260,15 @@ export class ConversationsService {
       where: { id: conversationId },
       select: { type: true },
     });
-    if (conv?.type !== 'GROUP') throw new ForbiddenException('Seul un groupe peut être quitté');
+    if (conv?.type !== 'GROUP')
+      throw new ForbiddenException('Seul un groupe peut être quitté');
     const participant = await this.prisma.conversationParticipant.findFirst({
       where: { conversationId, userId },
     });
     if (!participant) throw new NotFoundException('Not a participant');
-    await this.prisma.conversationParticipant.delete({ where: { id: participant.id } });
+    await this.prisma.conversationParticipant.delete({
+      where: { id: participant.id },
+    });
     // If no admins remain, promote oldest member
     const remaining = await this.prisma.conversationParticipant.findMany({
       where: { conversationId },
@@ -240,10 +291,13 @@ export class ConversationsService {
       where: { id: conversationId },
       select: { type: true },
     });
-    if (conv?.type !== 'GROUP') throw new ForbiddenException('Seul un groupe peut être supprimé');
+    if (conv?.type !== 'GROUP')
+      throw new ForbiddenException('Seul un groupe peut être supprimé');
     await this.ensureAdmin(conversationId, userId);
     await this.prisma.message.deleteMany({ where: { conversationId } });
-    await this.prisma.conversationParticipant.deleteMany({ where: { conversationId } });
+    await this.prisma.conversationParticipant.deleteMany({
+      where: { conversationId },
+    });
     await this.prisma.conversation.delete({ where: { id: conversationId } });
     return { ok: true };
   }
@@ -253,6 +307,7 @@ export class ConversationsService {
       where: { conversationId, userId },
     });
     if (!participant) throw new ForbiddenException('Not a participant');
-    if (participant.role !== 'ADMIN') throw new ForbiddenException('Admin required');
+    if (participant.role !== 'ADMIN')
+      throw new ForbiddenException('Admin required');
   }
 }

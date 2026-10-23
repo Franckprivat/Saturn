@@ -38,6 +38,8 @@ export function ImageSendModal({ file, onSend, onClose }: ImageSendModalProps) {
   useEffect(() => {
     let cancelled = false;
     const objectUrl = URL.createObjectURL(file);
+    // L'URL objet doit être créée et révoquée avec l'effet (sinon fuite / URL révoquée en StrictMode)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPreviewUrl(objectUrl);
     compressImage(file).then((result) => {
       if (cancelled) return;
@@ -108,7 +110,7 @@ export function ImageSendModal({ file, onSend, onClose }: ImageSendModalProps) {
         {/* Infos compression */}
         <div className="px-4 pt-2.5 flex items-center justify-between text-[11px]" style={{ color: 'var(--sat-faint)' }}>
           {status === 'preparing' ? (
-            <span>Optimisation de l'image…</span>
+            <span>Optimisation de l&apos;image…</span>
           ) : compressed?.wasCompressed ? (
             <span>
               ✓ Compressée : {formatBytes(compressed.originalSize)} → <strong style={{ color: 'var(--sat-online)' }}>{formatBytes(compressed.compressedSize)}</strong>
@@ -134,7 +136,7 @@ export function ImageSendModal({ file, onSend, onClose }: ImageSendModalProps) {
         {status === 'error' && (
           <div className="mx-4 mt-2 px-3 py-2 rounded-xl flex items-center justify-between gap-2 text-xs"
             style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', color: '#EF4444' }}>
-            <span>⚠ Échec de l'envoi — vérifie ta connexion.</span>
+            <span>⚠ Échec de l&apos;envoi — vérifie ta connexion.</span>
             <button onClick={upload} className="font-bold underline flex-shrink-0">Réessayer</button>
           </div>
         )}

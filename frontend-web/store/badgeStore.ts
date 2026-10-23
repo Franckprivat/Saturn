@@ -38,8 +38,8 @@ export const useBadgeStore = create<BadgeState>((set, get) => ({
     if (!id) return;
     set({ myId: id });
     try {
-      const res = await api.get('/friends/requests');
-      const count = (res.data as any[]).filter(
+      const res = await api.get<{ status: string; addressee?: { id: string } }[]>('/friends/requests');
+      const count = res.data.filter(
         (r) => r.status === 'PENDING' && r.addressee?.id === id,
       ).length;
       set({ friendRequests: count });
@@ -50,9 +50,9 @@ export const useBadgeStore = create<BadgeState>((set, get) => ({
 
   refreshMissedCalls: async () => {
     try {
-      const res = await api.get('/calls');
+      const res = await api.get<{ status: string; direction: string; createdAt: string; timestamp?: string }[]>('/calls');
       const seen = getCallsSeen();
-      const count = (res.data as any[]).filter(
+      const count = res.data.filter(
         (c) => c.status === 'missed' && c.direction === 'incoming' &&
           new Date(c.createdAt ?? c.timestamp).getTime() > seen,
       ).length;

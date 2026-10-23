@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import { api } from '@/lib/api';
-import { useChatStore } from '@/store/chatStore';
+import { useChatStore, type ChatMessage, type MessageReaction } from '@/store/chatStore';
 import { Avatar } from '@/components/Avatar';
 import { EmojiPicker } from '@/components/EmojiPicker';
 import { Spinner } from '@/components/Spinner';
@@ -31,7 +31,7 @@ interface ChannelChatProps {
   conversationId: string;
   channelName: string;
   socket: Socket | null;
-  currentUser: any;
+  currentUser: { id: string } | null;
 }
 
 export function ChannelChat({ conversationId, channelName, socket, currentUser }: ChannelChatProps) {
@@ -39,7 +39,7 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [replyTo, setReplyTo] = useState<any | null>(null);
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
   const [reactionPicker, setReactionPicker] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -50,7 +50,7 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Suppression : pour moi (masquage local) / pour tous
-  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (currentUser?.id) setHiddenIds(getHiddenMessageIds(currentUser.id));
@@ -168,11 +168,11 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
           <div className="text-center py-16">
             <div className="w-16 h-16 rounded-2xl mx-auto mb-3 flex items-center justify-center text-3xl" style={{ background: 'var(--sat-surface)' }}>#</div>
             <p className="font-bold" style={{ color: 'var(--sat-text)' }}>Bienvenue sur #{channelName}</p>
-            <p className="text-sm" style={{ color: 'var(--sat-muted)' }}>C'est le début de ce salon.</p>
+            <p className="text-sm" style={{ color: 'var(--sat-muted)' }}>C&apos;est le début de ce salon.</p>
           </div>
         )}
 
-        {messages.map((msg: any, i: number) => {
+        {messages.map((msg, i) => {
           if (msg.type === 'SYSTEM') {
             return (
               <div key={msg.id} className="flex items-center justify-center gap-2 my-2">
@@ -187,9 +187,9 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
           const isMe = msg.sender.id === currentUser?.id;
           const isDeleted = !!msg.deletedAt;
           const isEditing = editingId === msg.id;
-          const prev = messages[i - 1] as any;
+          const prev = messages[i - 1] as ChatMessage | undefined;
           const grouped = prev?.type !== 'SYSTEM' && prev?.sender?.id === msg.sender.id && new Date(msg.createdAt).getTime() - new Date(prev?.createdAt ?? 0).getTime() < 300000;
-          const reactionGroups: Record<string, any[]> = {};
+          const reactionGroups: Record<string, MessageReaction[]> = {};
           for (const r of (msg.reactions || [])) { (reactionGroups[r.emoji] ??= []).push(r); }
 
           return (
@@ -244,7 +244,7 @@ export function ChannelChat({ conversationId, channelName, socket, currentUser }
                 {Object.keys(reactionGroups).length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1">
                     {Object.entries(reactionGroups).map(([emoji, users]) => {
-                      const mine = users.some((u: any) => u.userId === currentUser?.id);
+                      const mine = users.some((u) => u.userId === currentUser?.id);
                       return (
                         <button key={emoji} onClick={() => socket?.emit('add_reaction', { messageId: msg.id, emoji })}
                           className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
