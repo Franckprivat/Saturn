@@ -61,7 +61,8 @@ It combines the **1-to-1 / group messaging** of WhatsApp with the **server / cha
 
 ### Calls
 - **Voice & video calls** over **WebRTC** (peer-to-peer, mesh topology for groups)
-- Call log history
+- Call log history, stored server-side
+- **TURN** support with short-lived HMAC credentials (coturn `use-auth-secret`) so calls work behind strict NATs
 
 ### Experience
 - **5 themes** (Light, Dark, Midnight, Solarized, Forest) + 6 accent colors, with an anti-FOUC bootstrap
@@ -69,8 +70,10 @@ It combines the **1-to-1 / group messaging** of WhatsApp with the **server / cha
 - Fully **responsive** (mobile / tablet / desktop)
 
 ### Auth & Security
-- Email/password authentication via **better-auth** (sessions, password reset)
-- **Helmet** security headers, **rate limiting** (throttler), CORS allowlist
+- Email/password authentication via **better-auth** (sessions, password reset, optional email verification)
+- Every API route requires a session by default (global guard, explicit `@Public()` opt-out)
+- Group owner protection: the creator can't be kicked or demoted, and only they manage other admins
+- **Helmet** security headers, strict **Content-Security-Policy**, **rate limiting** (throttler + better-auth), CORS allowlist
 - Optional **Cloudflare R2** (S3-compatible) for durable file storage
 
 ---
@@ -89,7 +92,7 @@ It combines the **1-to-1 / group messaging** of WhatsApp with the **server / cha
 | **Calls** | WebRTC | Low-latency P2P audio/video without routing media through a server |
 | **Auth** | better-auth | Modern session-based auth with a clean TS API |
 | **Infra** | Docker Compose + Nginx | One-command spin-up; Nginx reverse-proxies `/api` and `/` |
-| **CI** | GitHub Actions | Lint + tests (backend) and lint + build (frontend) on every push |
+| **CI** | GitHub Actions | Lint, unit tests and integration tests on a real Postgres (backend), lint + build (frontend) on every push |
 
 ---
 
@@ -155,10 +158,18 @@ cp .env.example .env
 #   -> set POSTGRES_USER / POSTGRES_PASSWORD, the same values in DATABASE_URL
 #      and BETTER_AUTH_DATABASE_URL (host stays `db:5432`), and BETTER_AUTH_SECRET
 
-docker compose up -d --build   # db + backend + frontend + nginx
+docker compose up -d --build   # db + backend + frontend + nginx (production build)
 ```
 
-The app is at **http://localhost**. The browser only talks to Nginx, which routes `/api`, `/api/auth`, `/uploads` and `/socket.io` to the backend and everything else to Next.js.
+The app is at **http://localhost**. The browser only talks to Nginx, which routes `/api`, `/api/auth`, `/uploads` and `/socket.io` to the backend and everything else to Next.js. The backend port is not published.
+
+`PUBLIC_URL` in `.env` (default `http://localhost`) is the address the browser uses. It is baked into the frontend build, so after changing it run `docker compose up -d --build` again.
+
+For hot reload inside Docker, add the dev override (it also publishes the backend on `127.0.0.1:3001`):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+```
 
 Stop with `docker compose down` (add `-v` to wipe the database).
 
@@ -218,10 +229,13 @@ DEMO_ACCOUNT_PASSWORD=saturn-demo
 | `DATABASE_URL` | yes | Prisma connection string |
 | `BETTER_AUTH_DATABASE_URL` | yes | Auth DB (same database, without `?schema=public`) |
 | `BETTER_AUTH_SECRET` | yes | Session signing secret |
-| `BETTER_AUTH_URL` | yes | Public URL of the API (see table above) |
+| `BETTER_AUTH_URL` | yes | Public URL of the API (see table above; set from `PUBLIC_URL` in Docker) |
+| `PUBLIC_URL` | no | Docker only: address seen by the browser (default `http://localhost`) |
 | `ALLOWED_ORIGINS` | yes | CORS allowlist |
 | `PORT` | no | API port (default `3001`) |
-| `SMTP_*` | no | Email (password reset). Without `SMTP_USER`, reset links are not sent and the backend logs a warning |
+| `SMTP_*` | no | Email (password reset, address confirmation). Without `SMTP_USER`, no email is sent and the backend logs a warning |
+| `REQUIRE_EMAIL_VERIFICATION` | no | `true` blocks sign-in until the address is confirmed (only when SMTP is configured) |
+| `TURN_URLS` + `TURN_SECRET` (or `TURN_USERNAME` / `TURN_CREDENTIAL`) | no | TURN server for calls. Without it, calls can fail on some mobile or corporate networks |
 | `R2_*` | no | Cloudflare R2 file storage (falls back to local disk) |
 | `TRUST_PROXY` | no | Express `trust proxy` value. Default `loopback, linklocal, uniquelocal` (Nginx in the Docker network); e.g. `1` behind a single load balancer |
 | `DEMO_ACCOUNT_ENABLED` / `DEMO_ACCOUNT_EMAIL` / `DEMO_ACCOUNT_PASSWORD` | no | Shared demo account (see above) |
@@ -231,6 +245,9 @@ DEMO_ACCOUNT_PASSWORD=saturn-demo
 
 - Keep the backend port (`3001`) private and expose only Nginx. Auth rate limiting reads the client IP from the `X-Real-IP` header set by Nginx.
 - Migrations run on container start; outside Docker, run `npx prisma migrate deploy` after pulling.
+- **HTTPS**: a ready-to-use template is in `nginx/nginx.https.conf.example` (Let's Encrypt, HTTP→HTTPS redirect, HSTS); the steps are at the top of the file.
+- **Backups**: `./scripts/backup.sh` saves Postgres and the uploads into `backups/` and keeps the last 14. Run it from cron.
+- **Existing Docker installs**: if uploads return a 500 error, the `uploads-data` volume was created with the wrong owner. Fix it once with `docker compose run --rm -u root backend chown -R node:node /usr/src/app/uploads`.
 
 ---
 
@@ -242,7 +259,16 @@ cd backend && npm run lint:ci  # ESLint (no auto-fix)
 cd frontend-web && npm run build
 ```
 
-CI runs lint + tests on every push via GitHub Actions.
+Integration tests start the built API against a migrated test database and check the access rules (sessions, group permissions, bans, input validation):
+
+```bash
+cd backend
+# DATABASE_URL, BETTER_AUTH_DATABASE_URL and BETTER_AUTH_SECRET point to a test database
+npx prisma migrate deploy
+npm run build && npm run test:e2e
+```
+
+CI runs lint, unit tests and these integration tests (on Postgres 16) on every push via GitHub Actions.
 
 ---
 
@@ -258,8 +284,9 @@ CI runs lint + tests on every push via GitHub Actions.
 
 ## Roadmap
 
-- [ ] Server-side persistence for the call log
-- [ ] Push notifications
+- [ ] Web Push notifications
+- [ ] Media server (SFU) for voice rooms with more than 6 people
+- [ ] Redis adapter to run several backend instances
 - [ ] Community roles & moderation
 - [ ] E2E tests (Playwright)
 - [ ] Message search
