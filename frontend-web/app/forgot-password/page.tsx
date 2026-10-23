@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { authClient } from '@/lib/auth-client';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -15,17 +16,12 @@ export default function ForgotPasswordPage() {
     setLoading(true);
     setError('');
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const res = await fetch(`${baseUrl}/api/auth/request-password-reset`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          email: email.trim(),
-          redirectTo: `${window.location.origin}/reset-password`,
-        }),
+      // Le client better-auth construit l'URL (évite /api/api/auth derrière Nginx)
+      const { error: authError } = await authClient.requestPasswordReset({
+        email: email.trim(),
+        redirectTo: `${window.location.origin}/reset-password`,
       });
-      if (!res.ok) throw new Error();
+      if (authError) throw new Error();
       setSent(true);
     } catch {
       setError("Une erreur est survenue. Vérifie l'adresse email.");

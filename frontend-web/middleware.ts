@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const PUBLIC_ROUTES = ['/login', '/signup'];
+// Pages accessibles sans être connecté
+const PUBLIC_ROUTES = ['/', '/login', '/signup', '/forgot-password', '/reset-password'];
+
+// En HTTPS, better-auth préfixe le cookie avec __Secure-
+const SESSION_COOKIES = ['better-auth.session_token', '__Secure-better-auth.session_token'];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -9,10 +13,9 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const sessionToken =
-    request.cookies.get('better-auth.session_token')?.value;
+  const hasSession = SESSION_COOKIES.some((name) => request.cookies.get(name)?.value);
 
-  if (!sessionToken) {
+  if (!hasSession) {
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);

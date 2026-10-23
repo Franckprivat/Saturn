@@ -3,6 +3,7 @@
 import { Suspense, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { authClient } from '@/lib/auth-client';
 
 function ResetPasswordForm() {
   const router = useRouter();
@@ -28,14 +29,8 @@ function ResetPasswordForm() {
     setLoading(true);
     setError('');
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const res = await fetch(`${baseUrl}/api/auth/reset-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ newPassword: password, token }),
-      });
-      if (!res.ok) throw new Error();
+      const { error: authError } = await authClient.resetPassword({ newPassword: password, token });
+      if (authError) throw new Error();
       setDone(true);
       setTimeout(() => router.push('/login'), 3000);
     } catch {

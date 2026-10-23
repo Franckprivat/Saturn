@@ -1,12 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { AuthLayout, AuthInput, AuthButton, AuthError } from '@/components/AuthLayout';
+import { DemoLoginButton } from '@/components/DemoLoginButton';
+
+// N'accepte que les chemins internes (« //site.com » mènerait hors de l'app)
+function safeRedirect(target: string | null) {
+  // Redirection interne uniquement (pas de « //site.com », « /\\site.com » ni d'URL absolue)
+  return target && /^\/(?![/\\])/.test(target) ? target : '/chat';
+}
 
 export default function LoginPage() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -25,9 +31,9 @@ export default function LoginPage() {
       setLoading(false);
       return;
     }
-    // Redirection interne uniquement (pas de « //site.com » ni d'URL absolue)
-    const redirect = searchParams.get('redirect');
-    router.push(redirect && /^\/(?![/\\])/.test(redirect) ? redirect : '/');
+    // Navigation complète : le cache du routeur peut encore contenir la
+    // redirection vers /login obtenue avant la connexion.
+    window.location.assign(safeRedirect(searchParams.get('redirect')));
   };
 
   return (
@@ -51,6 +57,8 @@ export default function LoginPage() {
         <AuthError message={error} />
         <AuthButton loading={loading}>Se connecter</AuthButton>
       </form>
+
+      <DemoLoginButton className="mt-4" />
 
       <p className="text-center text-sm mt-7 text-[#6B655C]">
         Pas encore de compte ?{' '}

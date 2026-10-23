@@ -76,7 +76,7 @@ export default function SignupPage() {
     try {
       await api.patch('/users/me', { image: uploaded, avatarColor: uploaded ? null : color });
     } catch { /* non bloquant */ }
-    router.push('/');
+    router.push('/chat');
   };
 
   if (checkEmail) {

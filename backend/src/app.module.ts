@@ -16,6 +16,7 @@ import { ChatModule } from './chat/chat.module';
 import { UploadModule } from './upload/upload.module';
 import { CommunitiesModule } from './communities/communities.module';
 import { CallsModule } from './calls/calls.module';
+import { DemoModule } from './demo/demo.module';
 import { SessionGuard } from './auth/session.guard';
 
 @Module({
@@ -58,6 +59,7 @@ import { SessionGuard } from './auth/session.guard';
     UploadModule,
     CommunitiesModule,
     CallsModule,
+    DemoModule,
   ],
   controllers: [AppController],
   providers: [
