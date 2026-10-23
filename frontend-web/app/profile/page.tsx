@@ -8,6 +8,7 @@ import { compressImage, mediaUrl } from '@/lib/media';
 import { QRCodeSVG } from 'qrcode.react';
 import { useThemeStore, THEMES, ACCENTS, type ThemeName, type AccentColor } from '@/store/themeStore';
 import { PageLoader } from '@/components/Spinner';
+import type { ChatUser } from '@/store/chatStore';
 
 type Tab = 'profil' | 'liens' | 'parametres';
 
@@ -69,12 +70,23 @@ const FIELD = 'w-full bg-[var(--sat-hover)] border border-[var(--sat-border-2)] 
 const BTN_PRIMARY = 'w-full py-3 rounded-2xl bg-[var(--sat-accent)] hover:bg-[var(--sat-accent2)] text-white disabled:opacity-50 text-sm font-semibold transition';
 const BTN_DANGER = 'w-full py-3 rounded-2xl bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-[#EF4444] text-sm font-semibold transition';
 
+interface ProfileUser {
+  id: string;
+  email: string;
+  name?: string | null;
+  nickname?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  bio?: string | null;
+  createdAt: string | Date;
+}
+
 export default function ProfilePage() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [tab, setTab] = useState<Tab>('profil');
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<ProfileUser | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -92,7 +104,7 @@ export default function ProfilePage() {
   const [socialLinks, setSocialLinks] = useState<Record<string, string>>({});
 
   // Paramètres — création de groupe
-  const [friends, setFriends] = useState<any[]>([]);
+  const [friends, setFriends] = useState<ChatUser[]>([]);
   const [groupName, setGroupName] = useState('');
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
   const [creatingGroup, setCreatingGroup] = useState(false);
@@ -277,7 +289,7 @@ export default function ProfilePage() {
             {/* Couleur avatar */}
             {!image && (
               <div className={`${CARD} p-4 space-y-3`}>
-                <p className={LABEL}>Couleur de l'avatar</p>
+                <p className={LABEL}>Couleur de l&apos;avatar</p>
                 <div className="flex gap-2 flex-wrap">
                   {AVATAR_COLORS.map((c) => (
                     <button
@@ -540,7 +552,7 @@ export default function ProfilePage() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs text-[var(--sat-muted)] mb-2">Couleur d'accent</p>
+                  <p className="text-xs text-[var(--sat-muted)] mb-2">Couleur d&apos;accent</p>
                   <div className="flex gap-2 flex-wrap">
                     {(Object.entries(ACCENTS) as [AccentColor, typeof ACCENTS[AccentColor]][]).map(([key, a]) => (
                       <button
@@ -576,7 +588,7 @@ export default function ProfilePage() {
                 />
 
                 {friends.length === 0 ? (
-                  <p className="text-xs text-[var(--sat-muted)] py-2">Aucun ami disponible. Ajoute des amis d'abord.</p>
+                  <p className="text-xs text-[var(--sat-muted)] py-2">Aucun ami disponible. Ajoute des amis d&apos;abord.</p>
                 ) : (
                   <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
                     {friends.map((f) => (

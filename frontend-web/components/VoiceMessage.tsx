@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 // Motif de barres déterministe (stable pour une même URL) — évite de décoder l'audio.
 function bars(seed: string, count = 34): number[] {
@@ -23,7 +23,7 @@ export function VoiceMessage({ url, mine }: { url: string; mine?: boolean }) {
   const [duration, setDuration] = useState(0);
   const [ready, setReady] = useState(false);
   const [speedIdx, setSpeedIdx] = useState(0);
-  const waveform = useRef(bars(url)).current;
+  const waveform = useMemo(() => bars(url), [url]);
 
   useEffect(() => {
     const a = new Audio();

@@ -12,6 +12,10 @@ const ICE_CONFIG: RTCConfiguration = {
 
 const SPEAKING_THRESHOLD = 0.045; // niveau RMS au-delà duquel on considère que ça parle
 
+type VoiceSignal =
+  | { kind: 'offer' | 'answer'; data: RTCSessionDescriptionInit }
+  | { kind: 'ice'; data: RTCIceCandidateInit };
+
 export interface VoicePeer {
   userId: string;
   muted: boolean;
@@ -40,12 +44,14 @@ export function useVoiceChannel(socket: Socket | null) {
 
   // ── Détection de parole (Web Audio) ──
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const analysersRef = useRef<Map<string, { analyser: AnalyserNode; data: Uint8Array }>>(new Map());
+  const analysersRef = useRef<Map<string, { analyser: AnalyserNode; data: Uint8Array<ArrayBuffer> }>>(new Map());
   const rafRef = useRef<number | null>(null);
 
   const ensureAudioCtx = useCallback(() => {
     if (!audioCtxRef.current) {
-      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      const Ctx =
+        window.AudioContext ||
+        (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (Ctx) audioCtxRef.current = new Ctx();
     }
     return audioCtxRef.current;
@@ -54,7 +60,7 @@ export function useVoiceChannel(socket: Socket | null) {
   const tick = useCallback(() => {
     const analysers = analysersRef.current;
     analysers.forEach(({ analyser, data }, id) => {
-      analyser.getByteTimeDomainData(data as any);
+      analyser.getByteTimeDomainData(data);
       let sum = 0;
       for (let i = 0; i < data.length; i++) {
         const v = (data[i] - 128) / 128;
@@ -120,7 +126,7 @@ export function useVoiceChannel(socket: Socket | null) {
       if (!a) {
         a = new Audio();
         a.autoplay = true;
-        (a as any).playsInline = true;
+        a.setAttribute('playsinline', '');
         audiosRef.current.set(socketId, a);
         document.body.appendChild(a);
       }
@@ -219,11 +225,11 @@ export function useVoiceChannel(socket: Socket | null) {
   useEffect(() => {
     if (!socket) return;
 
-    const onExisting = ({ channelId, peers: existing }: any) => {
+    const onExisting = ({ channelId, peers: existing }: { channelId: string; peers: { socketId: string; userId: string }[] }) => {
       if (channelId !== activeRef.current) return;
       for (const p of existing) createPeer(p.socketId, p.userId, true);
     };
-    const onSignal = async ({ fromSocketId, fromUserId, signal }: any) => {
+    const onSignal = async ({ fromSocketId, fromUserId, signal }: { fromSocketId: string; fromUserId: string; signal: VoiceSignal }) => {
       let pc = pcsRef.current.get(fromSocketId);
       try {
         if (signal.kind === 'offer') {
@@ -239,8 +245,8 @@ export function useVoiceChannel(socket: Socket | null) {
         }
       } catch { /* ignore */ }
     };
-    const onLeft = ({ socketId }: any) => cleanupPeer(socketId);
-    const onMute = ({ socketId, muted }: any) =>
+    const onLeft = ({ socketId }: { socketId: string }) => cleanupPeer(socketId);
+    const onMute = ({ socketId, muted }: { socketId: string; muted: boolean }) =>
       setPeers((prev) => (prev[socketId] ? { ...prev, [socketId]: { ...prev[socketId], muted } } : prev));
 
     socket.on('voice_existing_peers', onExisting);

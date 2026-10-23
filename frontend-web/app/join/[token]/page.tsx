@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { authClient } from '@/lib/auth-client';
 import { Spinner } from '@/components/Spinner';
+import { apiErrorMessage } from '@/lib/errors';
 
 export default function JoinGroupPage() {
   const params = useParams();
@@ -31,8 +32,8 @@ export default function JoinGroupPage() {
       setTimeout(() => {
         router.push(`/chat?conversationId=${res.data?.id}`);
       }, 1500);
-    } catch (e: any) {
-      setError(e?.response?.data?.message || 'Lien invalide ou expiré.');
+    } catch (e) {
+      setError(apiErrorMessage(e, 'Lien invalide ou expiré.'));
       setState('error');
     }
   };
@@ -54,7 +55,7 @@ export default function JoinGroupPage() {
             <>
               <h1 className="text-xl font-bold mb-2" style={{ color: 'var(--sat-text)' }}>Rejoindre le groupe</h1>
               <p className="text-sm mb-6" style={{ color: 'var(--sat-muted)' }}>
-                Tu as été invité à rejoindre un groupe Saturn. Clique pour accepter l'invitation.
+                Tu as été invité à rejoindre un groupe Saturn. Clique pour accepter l&apos;invitation.
               </p>
               <button
                 onClick={handleJoin}

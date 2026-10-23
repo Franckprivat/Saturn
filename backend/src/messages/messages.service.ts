@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 const SENDER_SELECT = {
@@ -40,14 +44,20 @@ export class MessagesService {
       const member = await this.prisma.communityMember.count({
         where: { communityId: conv.communityId, userId },
       });
-      if (!member) throw new ForbiddenException('Vous ne faites pas partie de cette communauté');
+      if (!member)
+        throw new ForbiddenException(
+          'Vous ne faites pas partie de cette communauté',
+        );
       return;
     }
     // DM / groupe : vérification classique des participants
     const count = await this.prisma.conversationParticipant.count({
       where: { userId, conversationId },
     });
-    if (!count) throw new ForbiddenException('You are not a participant of this conversation');
+    if (!count)
+      throw new ForbiddenException(
+        'You are not a participant of this conversation',
+      );
   }
 
   async getMessagesForConversation(
@@ -106,7 +116,10 @@ export class MessagesService {
         ],
       },
     });
-    if (blocked) throw new ForbiddenException('Vous ne pouvez pas envoyer de message à cet utilisateur');
+    if (blocked)
+      throw new ForbiddenException(
+        'Vous ne pouvez pas envoyer de message à cet utilisateur',
+      );
   }
 
   async createMessage(
@@ -127,7 +140,9 @@ export class MessagesService {
         select: { conversationId: true },
       });
       if (!target || target.conversationId !== conversationId) {
-        throw new NotFoundException('Message cité introuvable dans cette conversation');
+        throw new NotFoundException(
+          'Message cité introuvable dans cette conversation',
+        );
       }
     }
 
@@ -148,10 +163,14 @@ export class MessagesService {
   }
 
   async editMessage(messageId: string, userId: string, content: string) {
-    const msg = await this.prisma.message.findUnique({ where: { id: messageId } });
+    const msg = await this.prisma.message.findUnique({
+      where: { id: messageId },
+    });
     if (!msg) throw new NotFoundException('Message not found');
-    if (msg.senderId !== userId) throw new ForbiddenException('Cannot edit this message');
-    if (msg.deletedAt) throw new ForbiddenException('Cannot edit a deleted message');
+    if (msg.senderId !== userId)
+      throw new ForbiddenException('Cannot edit this message');
+    if (msg.deletedAt)
+      throw new ForbiddenException('Cannot edit a deleted message');
     return this.prisma.message.update({
       where: { id: messageId },
       data: { content, editedAt: new Date() },
@@ -159,7 +178,11 @@ export class MessagesService {
     });
   }
 
-  async createSystemMessage(senderId: string, conversationId: string, content: string) {
+  async createSystemMessage(
+    senderId: string,
+    conversationId: string,
+    content: string,
+  ) {
     return this.prisma.message.create({
       data: { senderId, conversationId, content, type: 'SYSTEM' },
       include: MESSAGE_INCLUDE,
@@ -169,7 +192,12 @@ export class MessagesService {
   async createCommunityInviteMessage(
     senderId: string,
     conversationId: string,
-    meta: { communityId: string; communityName: string; communityImage?: string | null; token?: string | null },
+    meta: {
+      communityId: string;
+      communityName: string;
+      communityImage?: string | null;
+      token?: string | null;
+    },
   ) {
     return this.prisma.message.create({
       data: {
@@ -213,7 +241,13 @@ export class MessagesService {
 
     return this.prisma.message.update({
       where: { id: messageId },
-      data: { deletedAt: new Date(), content: '', fileUrl: null, fileName: null, fileType: null },
+      data: {
+        deletedAt: new Date(),
+        content: '',
+        fileUrl: null,
+        fileName: null,
+        fileType: null,
+      },
       include: MESSAGE_INCLUDE,
     });
   }
@@ -268,8 +302,11 @@ export class MessagesService {
 
   async pinMessage(conversationId: string, messageId: string, userId: string) {
     await this.ensureParticipant(userId, conversationId);
-    const msg = await this.prisma.message.findUnique({ where: { id: messageId } });
-    if (!msg || msg.conversationId !== conversationId) throw new NotFoundException('Message not found');
+    const msg = await this.prisma.message.findUnique({
+      where: { id: messageId },
+    });
+    if (!msg || msg.conversationId !== conversationId)
+      throw new NotFoundException('Message not found');
     return this.prisma.pinnedMessage.upsert({
       where: { conversationId_messageId: { conversationId, messageId } },
       create: { conversationId, messageId, pinnedBy: userId },
@@ -278,9 +315,15 @@ export class MessagesService {
     });
   }
 
-  async unpinMessage(conversationId: string, messageId: string, userId: string) {
+  async unpinMessage(
+    conversationId: string,
+    messageId: string,
+    userId: string,
+  ) {
     await this.ensureParticipant(userId, conversationId);
-    await this.prisma.pinnedMessage.deleteMany({ where: { conversationId, messageId } });
+    await this.prisma.pinnedMessage.deleteMany({
+      where: { conversationId, messageId },
+    });
     return { ok: true };
   }
 

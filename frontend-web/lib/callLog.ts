@@ -13,8 +13,10 @@ export interface CallEntry {
   timestamp: string;
 }
 
-function normalize(entry: any): CallEntry {
-  return { ...entry, timestamp: entry.createdAt ?? entry.timestamp };
+type ApiCallEntry = Omit<CallEntry, 'timestamp'> & { createdAt?: string; timestamp?: string };
+
+function normalize(entry: ApiCallEntry): CallEntry {
+  return { ...entry, timestamp: entry.createdAt ?? entry.timestamp ?? '' };
 }
 
 function localLoad(): CallEntry[] {
@@ -24,8 +26,8 @@ function localLoad(): CallEntry[] {
 
 export async function loadCallLog(): Promise<CallEntry[]> {
   try {
-    const res = await api.get('/calls');
-    return (res.data as any[]).map(normalize);
+    const res = await api.get<ApiCallEntry[]>('/calls');
+    return res.data.map(normalize);
   } catch {
     return localLoad();
   }

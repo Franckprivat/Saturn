@@ -19,12 +19,18 @@ export function CallManager() {
 
   useEffect(() => {
     if (!socket) return;
-    const onIncoming = ({ offer, callType, callerName, callerImage, conversationId }: any) => {
+    const onIncoming = ({ offer, callType, callerName, callerImage, conversationId }: {
+      offer: RTCSessionDescriptionInit;
+      callType?: 'audio' | 'video';
+      callerName?: string;
+      callerImage?: string | null;
+      conversationId: string;
+    }) => {
       const accepted = receiveCall({
         conversationId,
         callType: callType || 'audio',
         peerName: callerName,
-        peerImage: callerImage,
+        peerImage: callerImage ?? undefined,
         incomingOffer: offer,
       });
       // Déjà en appel → on refuse automatiquement (occupé)

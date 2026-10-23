@@ -38,7 +38,11 @@ export function ContactPanel({
 }: ContactPanelProps) {
   const router = useRouter();
   const lastSeenLive = usePresenceStore((s) => s.lastSeenById[contact.id]);
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<{
+    bio?: string | null;
+    lastSeenAt?: string | null;
+    socialLinks?: Record<string, string> | null;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [aliasInput, setAliasInput] = useState(alias);
   const [prefs, setPrefs] = useState<ConvPrefs>(() => getConvPrefs(currentUserId, conversationId));
