@@ -1,34 +1,61 @@
 import { Tabs } from 'expo-router';
-import React from 'react';
-
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { totalUnread, useChatStore } from '@/store/chat';
+import { usePresenceStore } from '@/store/presence';
+
+type IconName = keyof typeof Ionicons.glyphMap;
+
+function icon(active: IconName, inactive: IconName) {
+  function TabIcon({ color, focused }: { color: string; focused: boolean }) {
+    return <Ionicons name={focused ? active : inactive} size={24} color={color} />;
+  }
+  return TabIcon;
+}
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const unread = useChatStore((s) => totalUnread(s.unread));
+  const requests = usePresenceStore((s) => s.friendRequests);
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
+        tabBarActiveTintColor: Colors.primary,
+        tabBarInactiveTintColor: Colors.faint,
+        tabBarStyle: { backgroundColor: Colors.surface, borderTopColor: Colors.border },
         tabBarButton: HapticTab,
-      }}>
+        tabBarBadgeStyle: { backgroundColor: Colors.primary, fontSize: 11 },
+        headerStyle: { backgroundColor: Colors.surface },
+        headerShadowVisible: false,
+        headerTitleStyle: { color: Colors.text, fontWeight: '800', fontSize: 22 },
+        headerTitleAlign: 'left',
+        sceneStyle: { backgroundColor: Colors.bg },
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          title: 'Discussions',
+          tabBarIcon: icon('chatbubbles', 'chatbubbles-outline'),
+          tabBarBadge: unread ? (unread > 99 ? '99+' : unread) : undefined,
         }}
       />
       <Tabs.Screen
-        name="explore"
+        name="friends"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: 'Amis',
+          tabBarIcon: icon('people', 'people-outline'),
+          tabBarBadge: requests || undefined,
         }}
+      />
+      <Tabs.Screen
+        name="communities"
+        options={{ title: 'Communautés', tabBarIcon: icon('planet', 'planet-outline') }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{ title: 'Profil', tabBarIcon: icon('person-circle', 'person-circle-outline') }}
       />
     </Tabs>
   );
