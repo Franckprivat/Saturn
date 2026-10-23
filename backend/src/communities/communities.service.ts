@@ -420,30 +420,6 @@ export class CommunitiesService {
     return { ok: true };
   }
 
-  async addMemberDirectly(
-    communityId: string,
-    actorId: string,
-    targetUserId: string,
-  ) {
-    await this.requireRole(communityId, actorId, 'ADMIN');
-    // Ajout direct réservé aux amis de l'admin, et jamais pour un banni :
-    // sinon n'importe quel compte pouvait être inscrit de force.
-    await this.conversationsService.ensureFriends(actorId, targetUserId);
-    const banned = await this.prisma.communityBan.count({
-      where: { communityId, userId: targetUserId },
-    });
-    if (banned) throw new ForbiddenException('Cet utilisateur est banni');
-    const existing = await this.prisma.communityMember.findUnique({
-      where: { communityId_userId: { communityId, userId: targetUserId } },
-    });
-    if (existing)
-      throw new BadRequestException('Cet utilisateur est déjà membre');
-    await this.prisma.communityMember.create({
-      data: { communityId, userId: targetUserId, role: 'MEMBER' },
-    });
-    return this.getCommunityDetail(communityId, actorId);
-  }
-
   // ── Invitations ──────────────────────────────────────────────────────────
 
   async sendCommunityInviteDm(
@@ -496,37 +472,5 @@ export class CommunitiesService {
     });
 
     return { ok: true };
-  }
-
-  async getInvite(communityId: string, userId: string) {
-    await this.getMembership(communityId, userId);
-    let community = await this.prisma.community.findUnique({
-      where: { id: communityId },
-    });
-    if (!community) throw new NotFoundException();
-    if (!community.inviteToken) {
-      community = await this.prisma.community.update({
-        where: { id: communityId },
-        data: { inviteToken: randomBytes(8).toString('hex') },
-      });
-    }
-    return { token: community.inviteToken };
-  }
-
-  async joinByInvite(token: string, userId: string) {
-    const community = await this.prisma.community.findUnique({
-      where: { inviteToken: token },
-    });
-    if (!community)
-      throw new NotFoundException('Invitation invalide ou expirée');
-    const existing = await this.prisma.communityMember.findUnique({
-      where: { communityId_userId: { communityId: community.id, userId } },
-    });
-    if (!existing) {
-      await this.prisma.communityMember.create({
-        data: { communityId: community.id, userId, role: 'MEMBER' },
-      });
-    }
-    return { id: community.id, name: community.name };
   }
 }

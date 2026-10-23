@@ -43,32 +43,32 @@ export class ConversationsService {
     private readonly friendsService: FriendsService,
   ) {}
 
-  async getUserConversations(userId: string) {
-    const participants = await this.prisma.conversationParticipant.findMany({
-      where: { userId },
+  /**
+   * Conversations de l'utilisateur, la plus récemment active en premier (façon
+   * WhatsApp). Tri et pagination faits en base grâce à `lastMessageAt`.
+   */
+  async getUserConversations(
+    userId: string,
+    opts: { limit?: number; before?: Date } = {},
+  ) {
+    const limit = Math.min(Math.max(opts.limit ?? 100, 1), 200);
+    return this.prisma.conversation.findMany({
+      where: {
+        participants: { some: { userId } },
+        ...(opts.before ? { lastMessageAt: { lt: opts.before } } : {}),
+      },
+      orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
+      take: limit,
       include: {
-        conversation: {
-          include: {
-            participants: PARTICIPANTS_INCLUDE,
-            messages: {
-              where: visibleTo(userId),
-              orderBy: { createdAt: 'desc' },
-              take: 1,
-              include: { sender: { select: USER_SELECT } },
-            },
-          },
+        participants: PARTICIPANTS_INCLUDE,
+        messages: {
+          where: visibleTo(userId),
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          include: { sender: { select: USER_SELECT } },
         },
       },
     });
-
-    // Tri façon WhatsApp : la conversation la plus récemment active en premier
-    return participants
-      .map((p) => p.conversation)
-      .sort((a, b) => {
-        const lastA = a.messages[0]?.createdAt ?? a.createdAt;
-        const lastB = b.messages[0]?.createdAt ?? b.createdAt;
-        return new Date(lastB).getTime() - new Date(lastA).getTime();
-      });
   }
 
   async getConversationById(conversationId: string, userId: string) {
@@ -210,12 +210,15 @@ export class ConversationsService {
           conversationId,
           role: 'MEMBER',
         })),
+        skipDuplicates: true,
       });
     }
-    return this.prisma.conversation.findUnique({
+    const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
       include: { participants: PARTICIPANTS_INCLUDE },
     });
+    // `addedIds` : seuls les membres réellement ajoutés (pas ceux déjà présents)
+    return { conversation, addedIds: toAdd };
   }
 
   async setMemberRole(
@@ -228,6 +231,7 @@ export class ConversationsService {
       throw new BadRequestException('Rôle invalide');
     }
     await this.ensureAdmin(conversationId, requesterId);
+    await this.ensureCanManage(conversationId, requesterId, targetUserId);
     return this.prisma.conversationParticipant.updateMany({
       where: { conversationId, userId: targetUserId },
       data: { role },
@@ -240,9 +244,63 @@ export class ConversationsService {
     targetUserId: string,
   ) {
     await this.ensureAdmin(conversationId, requesterId);
+    await this.ensureCanManage(conversationId, requesterId, targetUserId);
     return this.prisma.conversationParticipant.deleteMany({
       where: { conversationId, userId: targetUserId },
     });
+  }
+
+  /**
+   * Le créateur du groupe en est le propriétaire : personne ne peut le retirer
+   * ni le rétrograder, et seul lui peut retirer ou rétrograder un autre admin.
+   * S'il a quitté le groupe, les admins restants se gèrent entre eux.
+   */
+  private async ensureCanManage(
+    conversationId: string,
+    requesterId: string,
+    targetUserId: string,
+  ) {
+    if (requesterId === targetUserId) {
+      throw new BadRequestException(
+        'Utilisez « Quitter le groupe » pour vous retirer',
+      );
+    }
+    const conv = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: {
+        type: true,
+        creatorId: true,
+        participants: {
+          where: { userId: { in: [targetUserId, requesterId] } },
+          select: { userId: true, role: true },
+        },
+      },
+    });
+    if (conv?.type !== 'GROUP') {
+      throw new ForbiddenException('Action réservée aux groupes');
+    }
+    const target = conv.participants.find((p) => p.userId === targetUserId);
+    if (!target)
+      throw new NotFoundException("Ce membre n'est pas dans le groupe");
+    if (targetUserId === conv.creatorId) {
+      throw new ForbiddenException(
+        'Le créateur du groupe ne peut pas être modifié',
+      );
+    }
+    const creatorPresent =
+      !!conv.creatorId &&
+      (await this.prisma.conversationParticipant.count({
+        where: { conversationId, userId: conv.creatorId },
+      })) > 0;
+    if (
+      target.role === 'ADMIN' &&
+      creatorPresent &&
+      requesterId !== conv.creatorId
+    ) {
+      throw new ForbiddenException(
+        'Seul le créateur du groupe peut gérer les autres administrateurs',
+      );
+    }
   }
 
   /** Lève une erreur si les deux utilisateurs ne sont pas amis. */
@@ -299,13 +357,15 @@ export class ConversationsService {
     const conv = await this.prisma.conversation.findUnique({
       where: { inviteToken: token },
     });
-    if (!conv) throw new NotFoundException('Lien invalide ou expiré');
+    if (!conv || conv.type !== 'GROUP')
+      throw new NotFoundException('Lien invalide ou expiré');
     const already = await this.prisma.conversationParticipant.count({
       where: { conversationId: conv.id, userId },
     });
     if (!already) {
-      await this.prisma.conversationParticipant.create({
-        data: { conversationId: conv.id, userId, role: 'MEMBER' },
+      await this.prisma.conversationParticipant.createMany({
+        data: [{ conversationId: conv.id, userId, role: 'MEMBER' }],
+        skipDuplicates: true,
       });
     }
     return conv;
@@ -350,10 +410,21 @@ export class ConversationsService {
     if (conv?.type !== 'GROUP')
       throw new ForbiddenException('Seul un groupe peut être supprimé');
     await this.ensureAdmin(conversationId, userId);
-    await this.prisma.message.deleteMany({ where: { conversationId } });
-    await this.prisma.conversationParticipant.deleteMany({
-      where: { conversationId },
+    const group = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+      select: { creatorId: true },
     });
+    if (group?.creatorId && group.creatorId !== userId) {
+      const creatorPresent = await this.prisma.conversationParticipant.count({
+        where: { conversationId, userId: group.creatorId },
+      });
+      if (creatorPresent)
+        throw new ForbiddenException(
+          'Seul le créateur peut supprimer le groupe',
+        );
+    }
+    // Messages, participants, épinglés et reçus suivent par cascade (migration
+    // 20261023100000) ; les réponses venues d'ailleurs perdent leur lien (SetNull).
     await this.prisma.conversation.delete({ where: { id: conversationId } });
     return { ok: true };
   }

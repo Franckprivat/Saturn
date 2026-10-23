@@ -11,6 +11,7 @@ import { CallsService } from './calls.service';
 import { getSessionUser } from '../auth/get-session-user';
 import type { Request } from 'express';
 import { SaveCallDto } from './dto/save-call.dto';
+import { buildIceServers } from './ice-servers';
 
 @Controller('calls')
 export class CallsController {
@@ -20,6 +21,13 @@ export class CallsController {
   async getCallLog(@Req() req: Request) {
     const user = await getSessionUser(req);
     return this.callsService.getCallLog(user.id);
+  }
+
+  /** Configuration ICE (STUN + TURN éventuel) pour les appels et salons vocaux. */
+  @Get('ice-servers')
+  async iceServers(@Req() req: Request) {
+    const user = await getSessionUser(req);
+    return { iceServers: buildIceServers(user.id) };
   }
 
   @Post()

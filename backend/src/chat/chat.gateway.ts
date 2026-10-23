@@ -357,34 +357,34 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const preview = message.content
       ? message.content.substring(0, 80)
       : '📎 Fichier';
-    const socketsInRoom = await this.server
-      .in(data.conversationId)
-      .fetchSockets();
-    const usersInRoom = new Set(
-      socketsInRoom.map((s) => socketUserId(s)).filter(Boolean),
-    );
-
-    const conv = await this.prisma.conversation.findUnique({
-      where: { id: data.conversationId },
-      include: { participants: { select: { userId: true } } },
+    // Destinataires : participants (salons exclus : trop de membres), filtrés
+    // sur l'audience du chuchotement. Une seule émission, sans fetchSockets :
+    // `except` écarte les sockets qui ont déjà la conversation ouverte.
+    const participants = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId: data.conversationId },
+      select: { userId: true },
     });
-    if (conv) {
-      for (const p of conv.participants) {
-        // Un chuchotement ne se notifie qu'à ses destinataires
-        if (message.isWhisper && !message.whisperTo.includes(p.userId))
-          continue;
-        if (p.userId !== client.user.id && !usersInRoom.has(p.userId)) {
-          this.server.to(`user:${p.userId}`).emit('notification', {
-            type: 'message',
-            title: senderName,
-            body: preview,
-            href: `/chat?conversationId=${data.conversationId}`,
-            conversationId: data.conversationId,
-            image: message.sender?.image,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      }
+    const rooms = participants
+      .map((p) => p.userId)
+      .filter(
+        (id) =>
+          id !== client.user!.id &&
+          (!message.isWhisper || message.whisperTo.includes(id)),
+      )
+      .map((id) => `user:${id}`);
+    if (rooms.length) {
+      this.server
+        .to(rooms)
+        .except(data.conversationId)
+        .emit('notification', {
+          type: 'message',
+          title: senderName,
+          body: preview,
+          href: `/chat?conversationId=${data.conversationId}`,
+          conversationId: data.conversationId,
+          image: message.sender?.image,
+          timestamp: new Date().toISOString(),
+        });
     }
 
     return message;
@@ -443,7 +443,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string },
   ) {
     if (!client.user) return;
-    await this.messagesService.markAsRead(data.conversationId, client.user.id);
+    const { count } = await this.messagesService.markAsRead(
+      data.conversationId,
+      client.user.id,
+    );
+    if (count === 0) return;
     client.to(data.conversationId).emit('messages_read', {
       conversationId: data.conversationId,
       userId: client.user.id,

@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
 } from '@nestjs/common';
 import { ConversationsService } from './conversations.service';
@@ -15,6 +16,7 @@ import {
   AddMembersDto,
   CreateDmDto,
   CreateGroupDto,
+  ListConversationsQuery,
   SetGroupRoleDto,
   UpdateGroupDto,
 } from './dto/conversation.dto';
@@ -36,9 +38,15 @@ export class ConversationsController {
   ) {}
 
   @Get()
-  async getMyConversations(@Req() req: Request) {
+  async getMyConversations(
+    @Req() req: Request,
+    @Query() { limit, before }: ListConversationsQuery,
+  ) {
     const user = await getSessionUser(req);
-    return this.conversationsService.getUserConversations(user.id);
+    return this.conversationsService.getUserConversations(user.id, {
+      limit,
+      before: before ? new Date(before) : undefined,
+    });
   }
 
   @Get(':id')
@@ -123,14 +131,13 @@ export class ConversationsController {
     @Body() { memberIds }: AddMembersDto,
   ) {
     const user = await getSessionUser(req);
-    const result = await this.conversationsService.addMembers(
-      id,
-      user.id,
-      memberIds,
-    );
+    const { conversation, addedIds } =
+      await this.conversationsService.addMembers(id, user.id, memberIds);
     // Message système uniquement pour les membres réellement ajoutés
-    for (const memberId of memberIds) {
-      const added = result?.participants.find((p) => p.user.id === memberId);
+    for (const memberId of addedIds) {
+      const added = conversation?.participants.find(
+        (p) => p.user.id === memberId,
+      );
       if (!added) continue;
       await this.chatGateway.emitSystemMessage(
         id,
@@ -138,7 +145,7 @@ export class ConversationsController {
         `a ajouté ${displayName(added.user)} au groupe`,
       );
     }
-    return result;
+    return conversation;
   }
 
   @Patch(':id/members/:userId/role')

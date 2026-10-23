@@ -99,6 +99,7 @@ function validateAttachment(file: {
 export class MessagesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Lève une erreur si `userId` n'a pas accès ; renvoie le type de conversation. */
   private async ensureParticipant(userId: string, conversationId: string) {
     // Salon de communauté : l'accès dépend de l'appartenance à la communauté
     const conv = await this.prisma.conversation.findUnique({
@@ -113,7 +114,7 @@ export class MessagesService {
         throw new ForbiddenException(
           'Vous ne faites pas partie de cette communauté',
         );
-      return;
+      return conv.type;
     }
     // DM / groupe : vérification classique des participants
     const count = await this.prisma.conversationParticipant.count({
@@ -123,6 +124,7 @@ export class MessagesService {
       throw new ForbiddenException(
         'You are not a participant of this conversation',
       );
+    return conv?.type;
   }
 
   /** Vérifie que tous les `userIds` ont accès à la conversation. */
@@ -390,7 +392,10 @@ export class MessagesService {
 
   /** Marque comme « distribués » les messages arrivés sur l'appareil de `userId`. */
   async markAsDelivered(conversationId: string, userId: string) {
-    await this.ensureParticipant(userId, conversationId);
+    const type = await this.ensureParticipant(userId, conversationId);
+    // Salons de communauté : pas d'accusés par message (une ligne par message et
+    // par membre ne tient pas à 500 membres, et l'interface ne les affiche pas).
+    if (type === 'CHANNEL') return { count: 0 };
     const messages = await this.prisma.message.findMany({
       where: {
         conversationId,
@@ -408,7 +413,8 @@ export class MessagesService {
   }
 
   async markAsRead(conversationId: string, userId: string) {
-    await this.ensureParticipant(userId, conversationId);
+    const type = await this.ensureParticipant(userId, conversationId);
+    if (type === 'CHANNEL') return { count: 0 };
     // Uniquement les messages pas encore lus (évite de réécrire tous les reçus)
     const messages = await this.prisma.message.findMany({
       where: {

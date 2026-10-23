@@ -1,12 +1,31 @@
+import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsDateString,
   IsIn,
+  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
 } from 'class-validator';
+
+/** GET /conversations?limit=50&before=<lastMessageAt ISO> */
+export class ListConversationsQuery {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number;
+
+  @IsOptional()
+  @IsDateString()
+  before?: string;
+}
 
 export class CreateGroupDto {
   @IsString()

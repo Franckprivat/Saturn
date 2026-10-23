@@ -79,12 +79,6 @@ export class CommunitiesController {
     return this.communitiesService.deleteCommunity(id, user.id);
   }
 
-  @Get(':id/invite')
-  async invite(@Req() req: Request, @Param('id') id: string) {
-    const user = await getSessionUser(req);
-    return this.communitiesService.getInvite(id, user.id);
-  }
-
   @Post(':id/leave')
   async leave(@Req() req: Request, @Param('id') id: string) {
     const user = await getSessionUser(req);
@@ -160,17 +154,7 @@ export class CommunitiesController {
     return this.communitiesService.sendCommunityInviteDm(id, user.id, userId);
   }
 
-  // Membres
-  @Post(':id/members')
-  async addMember(
-    @Req() req: Request,
-    @Param('id') id: string,
-    @Body() { userId }: TargetUserDto,
-  ) {
-    const user = await getSessionUser(req);
-    return this.communitiesService.addMemberDirectly(id, user.id, userId);
-  }
-
+  // Membres (l'ajout passe par le système d'invitations, voir InvitationsController)
   @Patch(':id/members/:userId/role')
   async setRole(
     @Req() req: Request,

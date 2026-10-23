@@ -16,6 +16,7 @@ import { ChatModule } from './chat/chat.module';
 import { UploadModule } from './upload/upload.module';
 import { CommunitiesModule } from './communities/communities.module';
 import { CallsModule } from './calls/calls.module';
+import { SessionGuard } from './auth/session.guard';
 
 @Module({
   imports: [
@@ -63,6 +64,8 @@ import { CallsModule } from './calls/calls.module';
     AppService,
     // Guard de rate limiting actif sur toutes les routes
     { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // Session obligatoire partout, sauf routes @Public()
+    { provide: APP_GUARD, useClass: SessionGuard },
   ],
 })
 export class AppModule {}

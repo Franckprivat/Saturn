@@ -7,13 +7,13 @@ datasource db {
 }
 
 model User {
-  id            String    @id
+  id            String   @id
   name          String
-  email         String    @unique
-  emailVerified Boolean   @default(false)
+  email         String   @unique
+  emailVerified Boolean  @default(false)
   image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   firstName     String?
   lastName      String?
@@ -25,24 +25,24 @@ model User {
   /// Dernière déconnexion — affiché « Vu à HH:MM » quand l'utilisateur est hors ligne
   lastSeenAt    DateTime?
 
-  sessions      Session[]
-  accounts      Account[]
+  sessions Session[]
+  accounts Account[]
 
-  messages               Message[]
-  reactions              MessageReaction[]
-  readReceipts           ReadReceipt[]
-  deliveryReceipts       DeliveryReceipt[]
-  conversations          ConversationParticipant[]
-  communityMemberships   CommunityMember[]
-  friendRequestsSent     Friendship[] @relation("FriendshipRequester")
-  friendRequestsReceived Friendship[] @relation("FriendshipAddressee")
-  callLogs               CallLog[]
-  sentCommunityInvites     CommunityInvite[]      @relation("SentCommunityInvites")
-  receivedCommunityInvites CommunityInvite[]      @relation("ReceivedCommunityInvites")
-  createdInviteLinks       CommunityInviteLink[]  @relation("CreatedInviteLinks")
-  communityJoins           CommunityJoinLog[]     @relation("CommunityJoins")
-  communityJoinRequests    CommunityJoinRequest[] @relation("CommunityJoinRequests")
-  communityBans            CommunityBan[]         @relation("CommunityBans")
+  messages                 Message[]
+  reactions                MessageReaction[]
+  readReceipts             ReadReceipt[]
+  deliveryReceipts         DeliveryReceipt[]
+  conversations            ConversationParticipant[]
+  communityMemberships     CommunityMember[]
+  friendRequestsSent       Friendship[]              @relation("FriendshipRequester")
+  friendRequestsReceived   Friendship[]              @relation("FriendshipAddressee")
+  callLogs                 CallLog[]
+  sentCommunityInvites     CommunityInvite[]         @relation("SentCommunityInvites")
+  receivedCommunityInvites CommunityInvite[]         @relation("ReceivedCommunityInvites")
+  createdInviteLinks       CommunityInviteLink[]     @relation("CreatedInviteLinks")
+  communityJoins           CommunityJoinLog[]        @relation("CommunityJoins")
+  communityJoinRequests    CommunityJoinRequest[]    @relation("CommunityJoinRequests")
+  communityBans            CommunityBan[]            @relation("CommunityBans")
 
   @@map("user")
 }
@@ -92,29 +92,33 @@ model Verification {
 }
 
 model Conversation {
-  id              String                    @id @default(uuid())
-  createdAt       DateTime                  @default(now())
-  type            ConversationType          @default(DM)
-  name            String?
-  description     String?
-  image           String?
-  creatorId       String?
-  inviteToken     String?                   @unique
-  communityId     String?
-  community       Community?                @relation(fields: [communityId], references: [id], onDelete: Cascade)
-  participants    ConversationParticipant[]
-  messages        Message[]
-  pinnedMessages  PinnedMessage[]
-  channel         Channel?
+  id             String                    @id @default(uuid())
+  createdAt      DateTime                  @default(now())
+  type           ConversationType          @default(DM)
+  name           String?
+  description    String?
+  image          String?
+  creatorId      String?
+  /// Date du dernier message (tenue à jour par un trigger SQL) : tri de la liste
+  lastMessageAt  DateTime                  @default(now())
+  inviteToken    String?                   @unique
+  communityId    String?
+  community      Community?                @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  participants   ConversationParticipant[]
+  messages       Message[]
+  pinnedMessages PinnedMessage[]
+  channel        Channel?
+
+  @@index([lastMessageAt])
 }
 
 model ConversationParticipant {
-  id             String            @id @default(uuid())
-  user           User              @relation(fields: [userId], references: [id])
+  id             String       @id @default(uuid())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId         String
-  conversation   Conversation      @relation(fields: [conversationId], references: [id])
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   conversationId String
-  role           GroupRole         @default(MEMBER)
+  role           GroupRole    @default(MEMBER)
 
   @@unique([conversationId, userId])
   @@index([userId])
@@ -123,9 +127,9 @@ model ConversationParticipant {
 model Message {
   id             String            @id @default(uuid())
   content        String            @default("")
-  sender         User              @relation(fields: [senderId], references: [id])
+  sender         User              @relation(fields: [senderId], references: [id], onDelete: Cascade)
   senderId       String
-  conversation   Conversation      @relation(fields: [conversationId], references: [id])
+  conversation   Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   conversationId String
   createdAt      DateTime          @default(now())
   editedAt       DateTime?
@@ -168,9 +172,9 @@ enum MessageType {
 
 model Friendship {
   id          String           @id @default(uuid())
-  requester   User             @relation("FriendshipRequester", fields: [requesterId], references: [id])
+  requester   User             @relation("FriendshipRequester", fields: [requesterId], references: [id], onDelete: Cascade)
   requesterId String
-  addressee   User             @relation("FriendshipAddressee", fields: [addresseeId], references: [id])
+  addressee   User             @relation("FriendshipAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
   addresseeId String
   status      FriendshipStatus @default(PENDING)
   createdAt   DateTime         @default(now())
@@ -227,20 +231,22 @@ enum ConversationType {
   CHANNEL
 }
 
-/* ─── Communautés (façon Discord) ─────────────────────────────────────────── */
+/**
+ * ─── Communautés (façon Discord) ───────────────────────────────────────────
+ */
 
 model Community {
-  id            String            @id @default(uuid())
+  id            String                 @id @default(uuid())
   name          String
   description   String?
   image         String?
   ownerId       String
-  inviteToken   String?           @unique
+  inviteToken   String?                @unique
   /// OPEN : un lien valide suffit. APPROVAL : le lien crée une demande d'adhésion.
-  joinPolicy    JoinPolicy        @default(OPEN)
+  joinPolicy    JoinPolicy             @default(OPEN)
   /// Rôle minimal par action ({ invite: "MEMBER", ban: "ADMIN", … }) — défauts en service.
   permissions   Json?
-  createdAt     DateTime          @default(now())
+  createdAt     DateTime               @default(now())
   members       CommunityMember[]
   categories    ChannelCategory[]
   channels      Channel[]
