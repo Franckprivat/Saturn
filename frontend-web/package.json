@@ -6,7 +6,8 @@
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:assets": "node scripts/check-static-assets.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.2",

@@ -64,5 +64,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Logo et images : casse exacte des noms (Linux) + non bloqués par le middleware
+      - name: Check static assets
+        run: npm run check:assets
+
       - name: Build
         run: npm run build
