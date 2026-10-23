@@ -48,12 +48,12 @@ export default function LandingPage() {
         <section className="max-w-6xl mx-auto grid lg:grid-cols-[1fr_1.25fr] gap-10 lg:gap-14 items-center px-5 sm:px-8 pt-8 pb-20">
           <div>
             <h1 className="font-display text-4xl sm:text-5xl font-medium leading-[1.1]">
-              Une messagerie pour parler avec les gens qui comptent.
+              Discuter, tout simplement.
             </h1>
             <p className="mt-6 text-lg text-[#6B655C] leading-relaxed">
-              Messages privés, groupes, communautés et appels vidéo, directement dans le navigateur.
-              J’ai construit Saturn de A à Z pour comprendre ce qui se cache derrière les applications
-              qu’on utilise tous les jours.
+              Saturn est une messagerie que j’ai créée seul, pendant mon master. On y écrit à ses proches,
+              on monte un groupe pour un projet ou une communauté pour ses passions, et on s’appelle en
+              vidéo sans rien installer. Entre, essaie, et dis-moi ce que tu en penses.
             </p>
 
             <div className="mt-8 flex flex-col gap-3 max-w-sm">
