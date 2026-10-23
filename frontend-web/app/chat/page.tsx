@@ -22,6 +22,8 @@ import { ContactPanel } from '@/components/ContactPanel';
 import { DeleteMessageDialog } from '@/components/DeleteMessageDialog';
 import { bubbleGradient, getConvPrefs, type ConvPrefs } from '@/lib/convPrefs';
 import { getHiddenMessageIds, hideMessageForMe } from '@/lib/hiddenMessages';
+import { toast } from '@/components/Toast';
+import { apiErrorMessage } from '@/lib/errors';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -72,9 +74,18 @@ function CommunityInviteCard({ msg }: { msg: ChatMessage }) {
     setStatus('joining');
     try {
       const res = await api.post(`/communities/join/${meta.token}`);
+      if (res.data.requested) {
+        // Communauté sur approbation : la demande attend un modérateur
+        setStatus('idle');
+        toast('Demande envoyée, un modérateur doit l\'accepter', 'success');
+        return;
+      }
       setStatus('joined');
       setTimeout(() => router.push(`/communities/${res.data.id}`), 600);
-    } catch { setStatus('idle'); }
+    } catch (err) {
+      setStatus('idle');
+      toast(apiErrorMessage(err, 'Impossible de rejoindre la communauté'), 'error');
+    }
   };
 
   return (
@@ -156,10 +167,6 @@ function ChatPageContent() {
   const [reactionPicker, setReactionPicker] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // AI suggestions
-  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
-  const [loadingAi, setLoadingAi] = useState(false);
-
   // Sidebar groupe
   const [sidebarGroupOpen, setSidebarGroupOpen] = useState(false);
   const [friends, setFriends] = useState<ChatUser[]>([]);
@@ -193,7 +200,8 @@ function ChatPageContent() {
     authClient.getSession().then(({ data }) => {
       if (data?.user) setCurrentUser(data.user);
     }).catch(() => {});
-    api.get('/friends').then((r) => setFriends(r.data)).catch(() => {});
+    api.get('/friends').then((r) => setFriends(r.data))
+      .catch((err) => toast(apiErrorMessage(err, 'Chargement des amis impossible'), 'error'));
     api.get('/users/me').then((r) => setWallpaper(r.data?.chatWallpaper ?? null)).catch(() => {});
   }, []);
 
@@ -299,7 +307,6 @@ function ChatPageContent() {
     setShowContactPanel(false);
     setWhisperMode(false);
     setWhisperTargets([]);
-    setAiSuggestions([]);
     setTypingUsers({});
     setReplyTo(null);
     setEditingId(null);
@@ -335,23 +342,6 @@ function ChatPageContent() {
     [aliasMap, getOtherUser],
   );
 
-  // ── AI suggestions ──
-  const fetchAiSuggestions = async (lastMsg: ChatMessage) => {
-    if (!currentConversationId) return;
-    setLoadingAi(true);
-    setAiSuggestions([]);
-    try {
-      const msgs = (messagesByConversationId[currentConversationId] ?? []).slice(-5);
-      const formatted = msgs.map((m) => ({
-        role: m.sender.id === currentUser?.id ? 'assistant' : 'user',
-        content: m.content,
-      }));
-      const res = await api.post('/ai/suggest', { messages: formatted });
-      setAiSuggestions(res.data.suggestions ?? []);
-    } catch { /* ignore */ }
-    finally { setLoadingAi(false); }
-  };
-
   // ── Typing (émis une seule fois par salve de frappe, pas à chaque touche) ──
   const isTypingRef = useRef(false);
   const handleTyping = (value: string) => {
@@ -380,7 +370,6 @@ function ChatPageContent() {
     });
     if (!content) setNewMessage('');
     setReplyTo(null);
-    setAiSuggestions([]);
     if (socket && currentConversationId) {
       socket.emit('typing_stop', { conversationId: currentConversationId });
       isTypingRef.current = false;
@@ -548,7 +537,9 @@ function ChatPageContent() {
       const res = await api.get(`/conversations/${currentConv.id}`);
       setGroupDetail(res.data);
       setShowGroupPanel(true);
-    } catch { /* ignore */ }
+    } catch (err) {
+      toast(apiErrorMessage(err, 'Impossible d\'ouvrir les infos du groupe'), 'error');
+    }
   };
 
   const refreshGroupDetail = async () => {
@@ -942,8 +933,8 @@ function ChatPageContent() {
                               onKeyDown={(e) => { if (e.key === 'Enter') submitEdit(); if (e.key === 'Escape') setEditingId(null); }}
                               className="flex-1 px-3 py-1.5 rounded-xl text-sm focus:outline-none"
                               style={{ background: 'var(--sat-surface)', border: '1.5px solid var(--sat-accent)', color: 'var(--sat-text)' }} />
-                            <button onClick={submitEdit} className="text-xs font-bold" style={{ color: 'var(--sat-accent)' }}>✓</button>
-                            <button onClick={() => setEditingId(null)} className="text-xs" style={{ color: 'var(--sat-muted)' }}>✕</button>
+                            <button aria-label="Valider la modification" onClick={submitEdit} className="text-xs font-bold" style={{ color: 'var(--sat-accent)' }}>✓</button>
+                            <button aria-label="Annuler la modification" onClick={() => setEditingId(null)} className="text-xs" style={{ color: 'var(--sat-muted)' }}>✕</button>
                           </div>
                         ) : msg.type === 'INVITE' || msg.metadata?.communityName ? (
                           <CommunityInviteCard msg={msg} />
@@ -1118,7 +1109,7 @@ function ChatPageContent() {
                   <span className="truncate flex-1" style={{ color: 'var(--sat-faint)' }}>
                     {replyTo.content || 'fichier'}
                   </span>
-                  <button onClick={() => setReplyTo(null)} className="flex-shrink-0" style={{ color: 'var(--sat-faint)' }}>✕</button>
+                  <button aria-label="Annuler la réponse" onClick={() => setReplyTo(null)} className="flex-shrink-0" style={{ color: 'var(--sat-faint)' }}>✕</button>
                 </div>
               )}
 

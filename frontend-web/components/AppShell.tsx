@@ -14,6 +14,7 @@ import { useChatSocket } from '@/hooks/useChatSocket';
 import { useGlobalChatEvents } from '@/hooks/useGlobalChatEvents';
 import { useBadgeStore } from '@/store/badgeStore';
 import { mediaUrl } from '@/lib/media';
+import { ToastHost } from '@/components/Toast';
 
 const AUTH_ROUTES = ['/login', '/signup', '/forgot-password', '/reset-password'];
 
@@ -187,7 +188,7 @@ function NotificationDropdown({ onClose }: { onClose: () => void }) {
                         {new Date(n.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
-                    <button onClick={() => remove(n.id)} className="w-5 h-5 flex items-center justify-center flex-shrink-0 opacity-0 hover:opacity-100 transition"
+                    <button aria-label="Supprimer la notification" onClick={() => remove(n.id)} className="w-5 h-5 flex items-center justify-center flex-shrink-0 opacity-0 hover:opacity-100 transition"
                       style={{ color: 'var(--sat-faint)' }}>✕</button>
                   </div>
 
@@ -281,7 +282,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname]);
 
   const isAuthPage = AUTH_ROUTES.includes(pathname);
-  if (isAuthPage) return <>{children}</>;
+  if (isAuthPage) return <>{children}<ToastHost /></>;
 
   const initial = (profile?.nickname || user?.name || user?.email || '?').charAt(0).toUpperCase();
   const avatarGradient = profile?.avatarColor || 'from-[#2563EB] to-[#60A5FA]';
@@ -399,6 +400,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* ── Appels (global, ring partout) ── */}
       <CallManager />
+      {/* Toasts d'erreur et de confirmation, sur toutes les pages */}
+      <ToastHost />
     </div>
   );
 }

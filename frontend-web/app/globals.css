@@ -124,3 +124,11 @@ h1 {
 
 .scrollbar-none { scrollbar-width: none; }
 .scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* Accessibilité clavier : contour visible au focus, et les actions qui
+   n'apparaissent qu'au survol apparaissent aussi quand on y arrive au clavier. */
+:where(button, a, [role="button"], input, select, textarea):focus-visible {
+  outline: 2px solid var(--sat-accent);
+  outline-offset: 2px;
+}
+.group:focus-within .group-hover\:opacity-100 { opacity: 1; }

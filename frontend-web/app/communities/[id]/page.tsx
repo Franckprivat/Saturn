@@ -14,13 +14,14 @@ import {
 } from '@/store/communityStore';
 import { Avatar } from '@/components/Avatar';
 import { Spinner, PageLoader } from '@/components/Spinner';
-import { ToastHost, toast } from '@/components/Toast';
+import { toast } from '@/components/Toast';
 import { ChannelChat } from '@/components/communities/ChannelChat';
 import { CreateCommunityModal } from '@/components/communities/CreateCommunityModal';
 import { InvitePeopleModal } from '@/components/communities/InvitePeopleModal';
 import { CommunityManageModal } from '@/components/communities/CommunityManageModal';
 import { MicIcon, MicOffIcon, PhoneOffIcon, SpeakerIcon } from '@/components/Icons';
 import type { ChatUser } from '@/store/chatStore';
+import { apiErrorMessage } from '@/lib/errors';
 
 type MemberUser = CommunityMemberEntry['user'];
 
@@ -50,7 +51,6 @@ export default function CommunityPage() {
   const [addChannel, setAddChannel] = useState<null | { categoryId: string | null }>(null);
   const [memberMenu, setMemberMenu] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [showAddMember, setShowAddMember] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showManage, setShowManage] = useState(false);
   const [friends, setFriends] = useState<ChatUser[]>([]);
@@ -60,8 +60,10 @@ export default function CommunityPage() {
   // ── Chargement ──
   useEffect(() => {
     authClient.getSession().then(({ data }) => { if (data?.user) setCurrentUser(data.user); }).catch(() => {});
-    api.get('/communities').then((r) => setCommunities(r.data)).catch(() => {});
-    api.get('/friends').then((r) => setFriends(r.data)).catch(() => {});
+    api.get('/communities').then((r) => setCommunities(r.data))
+      .catch((err) => toast(apiErrorMessage(err, 'Chargement des communautés impossible'), 'error'));
+    api.get('/friends').then((r) => setFriends(r.data))
+      .catch((err) => toast(apiErrorMessage(err, 'Chargement des amis impossible'), 'error'));
   }, []);
 
   const loadDetail = useCallback(async () => {
@@ -128,18 +130,27 @@ export default function CommunityPage() {
   const renameCommunity = async () => {
     const name = window.prompt('Nouveau nom de la communauté', detail?.name);
     if (!name?.trim()) return;
-    await api.patch(`/communities/${communityId}`, { name: name.trim() }).then(loadDetail).catch(() => {});
+    await api.patch(`/communities/${communityId}`, { name: name.trim() }).then(loadDetail)
+      .catch((err) => toast(apiErrorMessage(err, 'Renommage impossible'), 'error'));
     setSettingsOpen(false);
   };
 
   const leaveCommunity = async () => {
-    await api.post(`/communities/${communityId}/leave`).catch(() => {});
-    router.push('/communities');
+    try {
+      await api.post(`/communities/${communityId}/leave`);
+      router.push('/communities');
+    } catch (err) {
+      toast(apiErrorMessage(err, 'Impossible de quitter la communauté'), 'error');
+    }
   };
 
   const deleteCommunity = async () => {
-    await api.delete(`/communities/${communityId}`).catch(() => {});
-    router.push('/communities');
+    try {
+      await api.delete(`/communities/${communityId}`);
+      router.push('/communities');
+    } catch (err) {
+      toast(apiErrorMessage(err, 'Suppression impossible'), 'error');
+    }
   };
 
   const createChannel = async (name: string, type: 'TEXT' | 'VOICE', categoryId: string | null) => {
@@ -152,12 +163,14 @@ export default function CommunityPage() {
   const addCategory = async () => {
     const name = window.prompt('Nom de la catégorie');
     if (!name?.trim()) return;
-    await api.post(`/communities/${communityId}/categories`, { name: name.trim() }).then((r) => setDetail(r.data)).catch(() => {});
+    await api.post(`/communities/${communityId}/categories`, { name: name.trim() }).then((r) => setDetail(r.data))
+      .catch((err) => toast(apiErrorMessage(err, 'Création de la catégorie impossible'), 'error'));
   };
 
   const deleteChannel = async (ch: Channel) => {
     if (!confirm(`Supprimer le salon « ${ch.name} » ?`)) return;
-    await api.delete(`/communities/${communityId}/channels/${ch.id}`).then((r) => setDetail(r.data)).catch(() => {});
+    await api.delete(`/communities/${communityId}/channels/${ch.id}`).then((r) => setDetail(r.data))
+      .catch((err) => toast(apiErrorMessage(err, 'Suppression du salon impossible'), 'error'));
   };
 
   const setMemberRole = async (userId: string, role: CommunityRole) => {
@@ -176,15 +189,6 @@ export default function CommunityPage() {
     await api.post(`/communities/${communityId}/bans`, { userId, reason: reason || undefined })
       .then(loadDetail).catch(() => toast('Action refusée', 'error'));
     setMemberMenu(null);
-  };
-
-  const handleAddMember = async (userId: string) => {
-    try {
-      const res = await api.post(`/communities/${communityId}/members`, { userId });
-      setDetail(res.data);
-      toast('Membre ajouté !', 'success');
-    } catch { toast('Impossible d\'ajouter ce membre', 'error'); }
-    setShowAddMember(false);
   };
 
   if (loading) return <PageLoader label="Chargement de la communauté..." />;
@@ -344,7 +348,7 @@ export default function CommunityPage() {
           <div className="h-12 px-4 flex items-center justify-between flex-shrink-0" style={{ borderBottom: '1px solid var(--sat-border)' }}>
             <span className="text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--sat-muted)' }}>Membres — {detail.members.length}</span>
             {canAdmin(myRole) && (
-              <button onClick={() => setShowAddMember(true)} title="Ajouter un membre"
+              <button onClick={openInvite} title="Inviter des membres" aria-label="Inviter des membres"
                 className="w-6 h-6 rounded flex items-center justify-center transition font-bold text-sm"
                 style={{ color: 'var(--sat-muted)', background: 'var(--sat-hover)' }}
                 onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'var(--sat-accent)'; }}
@@ -407,14 +411,6 @@ export default function CommunityPage() {
       {showCreate && (
         <CreateCommunityModal onClose={() => setShowCreate(false)} onCreated={(id) => { setShowCreate(false); router.push(`/communities/${id}`); }} />
       )}
-      {showAddMember && (
-        <AddMemberModal
-          friends={friends}
-          existingIds={detail.members.map((m) => m.user.id)}
-          onClose={() => setShowAddMember(false)}
-          onAdd={handleAddMember}
-        />
-      )}
       {showInvite && (
         <InvitePeopleModal
           communityId={communityId}
@@ -442,7 +438,6 @@ export default function CommunityPage() {
           onDelete={deleteCommunity}
         />
       )}
-      <ToastHost />
     </div>
   );
 }
@@ -466,7 +461,7 @@ function ChannelRow({ ch, active, voiceUsers, userById, canManage, onSelect, onD
         </span>
         <span className="flex-1 text-sm font-medium truncate">{ch.name}</span>
         {canManage && (
-          <button onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-xs opacity-0 group-hover:opacity-100 transition" style={{ color: 'var(--sat-faint)' }}>✕</button>
+          <button aria-label="Supprimer le salon" onClick={(e) => { e.stopPropagation(); onDelete(); }} className="text-xs opacity-0 group-hover:opacity-100 transition" style={{ color: 'var(--sat-faint)' }}>✕</button>
         )}
       </div>
       {/* Présence vocale */}
@@ -543,12 +538,12 @@ function VoiceStage({ channel, voice, userById, currentUserId }: {
             </div>
 
             <div className="flex gap-3">
-              <button onClick={voice.toggleMute}
+              <button aria-label={voice.selfMuted ? 'Réactiver le micro' : 'Couper le micro'} onClick={voice.toggleMute}
                 className="w-14 h-14 rounded-full flex items-center justify-center transition"
                 style={{ background: voice.selfMuted ? '#EF4444' : 'var(--sat-surface)', color: voice.selfMuted ? '#fff' : 'var(--sat-text)' }}>
                 {voice.selfMuted ? <MicOffIcon size={22} /> : <MicIcon size={22} />}
               </button>
-              <button onClick={voice.leave} className="w-14 h-14 rounded-full flex items-center justify-center text-white" style={{ background: '#EF4444' }}><PhoneOffIcon size={24} /></button>
+              <button aria-label="Quitter le salon vocal" onClick={voice.leave} className="w-14 h-14 rounded-full flex items-center justify-center text-white" style={{ background: '#EF4444' }}><PhoneOffIcon size={24} /></button>
             </div>
           </>
         )}
@@ -627,7 +622,7 @@ function CommunitySettingsModal({ detail, myRole, communityId, onClose, onUpdate
             </button>
           ))}
           <div className="flex-1" />
-          <button onClick={onClose} className="w-10 h-10 m-1 flex items-center justify-center rounded-lg transition"
+          <button aria-label="Fermer" onClick={onClose} className="w-10 h-10 m-1 flex items-center justify-center rounded-lg transition"
             style={{ color: 'var(--sat-faint)', background: 'var(--sat-hover)' }}>✕</button>
         </div>
 
@@ -705,52 +700,6 @@ function CommunitySettingsModal({ detail, myRole, communityId, onClose, onUpdate
             </div>
           )}
         </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Modale ajout membre ──
-function AddMemberModal({ friends, existingIds, onClose, onAdd }: {
-  friends: ChatUser[]; existingIds: string[]; onClose: () => void; onAdd: (userId: string) => void;
-}) {
-  const [search, setSearch] = useState('');
-  const eligible = friends.filter(
-    (f) => !existingIds.includes(f.id) &&
-      (!search.trim() || (f.nickname || f.email || '').toLowerCase().includes(search.toLowerCase()))
-  );
-  return (
-    <div className="fixed inset-0 z-[9990] flex items-center justify-center p-4" style={{ background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)' }} onClick={onClose}>
-      <div className="w-full max-w-sm rounded-2xl p-5 space-y-3" style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)' }} onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-base font-bold" style={{ color: 'var(--sat-text)' }}>Ajouter un membre</h2>
-        <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher parmi tes amis..."
-          className="w-full rounded-xl px-3.5 py-2.5 text-sm focus:outline-none"
-          style={{ background: 'var(--sat-void)', border: '1px solid var(--sat-border-2)', color: 'var(--sat-text)' }} />
-        <div className="max-h-60 overflow-y-auto space-y-1">
-          {eligible.length === 0 && (
-            <p className="text-xs text-center py-4" style={{ color: 'var(--sat-faint)' }}>
-              {friends.length === 0 ? 'Aucun ami disponible' : 'Tous tes amis sont déjà membres'}
-            </p>
-          )}
-          {eligible.map((f) => (
-            <button key={f.id} onClick={() => onAdd(f.id)}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition text-left"
-              style={{ background: 'var(--sat-hover)' }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(37,99,235,0.12)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--sat-hover)')}>
-              <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0 overflow-hidden"
-                style={{ background: f.image ? 'transparent' : 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
-                {f.image ? <img src={mediaUrl(f.image)} className="w-full h-full object-cover" alt="" /> : (f.nickname || f.email || '?').charAt(0).toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate" style={{ color: 'var(--sat-text)' }}>{f.nickname || f.email?.split('@')[0]}</p>
-                <p className="text-[11px] truncate" style={{ color: 'var(--sat-muted)' }}>{f.email}</p>
-              </div>
-              <span className="text-xs font-bold flex-shrink-0" style={{ color: 'var(--sat-accent)' }}>Ajouter</span>
-            </button>
-          ))}
-        </div>
-        <button onClick={onClose} className="w-full py-2.5 rounded-xl text-sm font-medium" style={{ background: 'var(--sat-hover)', color: 'var(--sat-muted)' }}>Fermer</button>
       </div>
     </div>
   );

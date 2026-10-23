@@ -19,7 +19,9 @@ export default function LoginPage() {
     setLoading(true);
     const { error: authError } = await authClient.signIn.email({ email, password });
     if (authError) {
-      setError(authError.message || 'Erreur lors de la connexion');
+      setError(authError.code === 'EMAIL_NOT_VERIFIED'
+        ? 'Confirme d\'abord ton adresse : un nouveau lien vient de t\'être envoyé par e-mail.'
+        : authError.message || 'Erreur lors de la connexion');
       setLoading(false);
       return;
     }

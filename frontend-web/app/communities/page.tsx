@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { mediaUrl } from '@/lib/media';
 import { Spinner } from '@/components/Spinner';
-import { ToastHost } from '@/components/Toast';
 import { CreateCommunityModal } from '@/components/communities/CreateCommunityModal';
 import { useCommunityStore, type CommunitySummary } from '@/store/communityStore';
+import { toast } from '@/components/Toast';
+import { apiErrorMessage } from '@/lib/errors';
 
 interface ReceivedInvite {
   id: string;
@@ -34,13 +35,14 @@ export default function CommunitiesHomePage() {
   const [code, setCode] = useState('');
 
   const loadInvites = () => {
-    api.get('/community-invitations/me').then((r) => setInvites(r.data)).catch(() => {});
+    api.get('/community-invitations/me').then((r) => setInvites(r.data))
+      .catch((err) => toast(apiErrorMessage(err, 'Chargement des invitations impossible'), 'error'));
   };
 
   useEffect(() => {
     api.get('/communities')
       .then((res) => setCommunities(res.data))
-      .catch(() => {})
+      .catch((err) => toast(apiErrorMessage(err, 'Chargement des communautés impossible'), 'error'))
       .finally(() => setLoading(false));
     loadInvites();
   }, []);
@@ -170,7 +172,6 @@ export default function CommunitiesHomePage() {
           onCreated={(id) => { setShowCreate(false); router.push(`/communities/${id}`); }}
         />
       )}
-      <ToastHost />
     </div>
   );
 }
