@@ -25,6 +25,9 @@ services:
       - .env
     environment:
       PORT: "3000"
+      # Le navigateur passe par Nginx (http://localhost) : better-auth doit
+      # connaître cette origine, quel que soit BETTER_AUTH_URL dans .env
+      BETTER_AUTH_URL: http://localhost
     volumes:
       # Persistance des fichiers uploadés : sans ce volume, chaque rebuild du
       # conteneur effaçait les images (URLs orphelines en base → images cassées)
@@ -48,7 +51,10 @@ services:
       - .env
     environment:
       NEXT_PUBLIC_API_URL: http://localhost/api   # axios → Nginx → backend (routes NestJS)
-      NEXT_PUBLIC_AUTH_URL: http://localhost       # better-auth → Nginx → /auth/* backend
+      NEXT_PUBLIC_AUTH_URL: http://localhost       # better-auth → Nginx → /api/auth/* backend
+      # Socket.IO → Nginx /socket.io/. Sans ça, le client retombait sur
+      # NEXT_PUBLIC_API_URL (http://localhost/api) et prenait "/api" pour un namespace
+      NEXT_PUBLIC_SOCKET_URL: http://localhost
       WATCHPACK_POLLING: "true"
       PORT: "3000"
     volumes:

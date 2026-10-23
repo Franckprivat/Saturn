@@ -1,21 +1,23 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans, Newsreader } from "next/font/google";
+import { Montserrat, Source_Sans_3 } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
 import { AppShell } from "@/components/AppShell";
 
-const jakarta = Plus_Jakarta_Sans({
-  variable: "--font-jakarta",
+// Texte courant : Source Sans 3, humaniste et très lisible en petite taille
+const sourceSans = Source_Sans_3({
+  variable: "--font-body",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
   display: "swap",
 });
 
-// Serif éditorial (esthétique Claude) — pour les titres
-const newsreader = Newsreader({
-  variable: "--font-serif",
+// Titres et marque : Montserrat, géométrique
+const montserrat = Montserrat({
+  variable: "--font-heading",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["500", "600", "700"],
   style: ["normal", "italic"],
   display: "swap",
 });
@@ -52,7 +54,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>
-      <body className={`${jakarta.variable} ${newsreader.variable} antialiased`} style={{ color: 'var(--sat-text)' }}>
+      <body className={`${sourceSans.variable} ${montserrat.variable} antialiased`} style={{ color: 'var(--sat-text)' }}>
         <AuthProvider>
           <AppShell>{children}</AppShell>
         </AuthProvider>
