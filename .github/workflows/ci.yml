@@ -128,5 +128,9 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
         continue-on-error: true
 
+      # Logo et images : casse exacte des noms (Linux) + non bloqués par le middleware
+      - name: Check static assets
+        run: npm run check:assets
+
       - name: Build
         run: npm run build
