@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
@@ -31,6 +31,15 @@ const montserrat = localFont({
 export const metadata: Metadata = {
   title: "Saturn",
   description: "Messagerie temps réel",
+};
+
+// Téléphone : largeur de l'appareil, et contenu jusque sous l'encoche
+// (les marges de sécurité sont gérées avec env(safe-area-inset-*))
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
 };
 
 // Anti-FOUC : applique le thème mémorisé avant le premier paint.

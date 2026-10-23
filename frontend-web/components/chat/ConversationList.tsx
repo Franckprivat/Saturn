@@ -21,12 +21,13 @@ interface Props {
   getTitle: (conv: Conversation) => string;
   isOnline: (userId: string) => boolean;
   onSelect: (conversationId: string) => void;
+  className?: string;
 }
 
 // Colonne de gauche : liste des conversations + création rapide d'un groupe
 export function ConversationList({
   conversations, unreadCounts, currentConversationId, currentUserId, loadingConvs,
-  friends, getOtherUser, getTitle, isOnline, onSelect,
+  friends, getOtherUser, getTitle, isOnline, onSelect, className,
 }: Props) {
   const { setConversations, setCurrentConversationId } = useChatStore();
   const [sidebarGroupOpen, setSidebarGroupOpen] = useState(false);
@@ -42,6 +43,7 @@ export function ConversationList({
       const convs = await api.get('/conversations');
       setConversations(convs.data);
       setCurrentConversationId(res.data.id);
+      onSelect(res.data.id);
       setSidebarGroupOpen(false);
       setGroupName('');
       setSelectedFriends([]);
@@ -53,7 +55,7 @@ export function ConversationList({
     setSelectedFriends((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
 
   return (
-    <aside className="flex flex-col flex-shrink-0" style={{ width: 240, background: 'var(--sat-panel)', borderRight: '1px solid var(--sat-border)' }}>
+    <aside className={cx('flex-col flex-shrink-0 w-full md:w-60', className ?? 'flex')} style={{ background: 'var(--sat-panel)', borderRight: '1px solid var(--sat-border)' }}>
     {/* Header liste */}
     <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--sat-border)' }}>
       <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: 'var(--sat-muted)' }}>
@@ -62,7 +64,7 @@ export function ConversationList({
       <button
         onClick={() => setSidebarGroupOpen((v) => !v)}
         title="Nouveau groupe"
-        className="w-5 h-5 flex items-center justify-center rounded transition text-lg font-bold leading-none"
+        className="w-8 h-8 md:w-5 md:h-5 -mr-1.5 md:mr-0 flex items-center justify-center rounded transition text-lg font-bold leading-none"
         style={{ color: sidebarGroupOpen ? 'var(--sat-text)' : 'var(--sat-muted)' }}
         onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--sat-text)')}
         onMouseLeave={(e) => { if (!sidebarGroupOpen) e.currentTarget.style.color = 'var(--sat-muted)'; }}
@@ -129,7 +131,7 @@ export function ConversationList({
 
         return (
           <button key={conv.id} onClick={() => onSelect(conv.id)}
-            className="w-full text-left flex items-center gap-2.5 px-2 py-1.5 rounded-md transition mb-0.5"
+            className="w-full text-left flex items-center gap-3 md:gap-2.5 px-2 py-2.5 md:py-1.5 rounded-md transition mb-0.5"
             style={{ background: isActive ? 'var(--sat-active)' : 'transparent', color: isActive ? 'var(--sat-text)' : unread > 0 ? 'var(--sat-text)' : 'var(--sat-muted)' }}
             onMouseEnter={(e) => { if (!isActive) (e.currentTarget as HTMLButtonElement).style.background = 'var(--sat-hover)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--sat-text)'; }}
             onMouseLeave={(e) => { if (!isActive) { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = unread > 0 ? 'var(--sat-text)' : 'var(--sat-muted)'; } }}
@@ -137,11 +139,11 @@ export function ConversationList({
             {/* Avatar */}
             <div className="relative flex-shrink-0">
               {conv.type === 'GROUP'
-                ? <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0"
+                ? <div className="w-11 h-11 md:w-8 md:h-8 rounded-full flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0"
                     style={{ background: 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))' }}>
                     {conv.image ? <img src={mediaUrl(conv.image)} loading="lazy" className="w-full h-full object-cover" alt="" /> : title.charAt(0).toUpperCase()}
                   </div>
-                : <Avatar user={otherUser || {}} size="xs" className="w-8 h-8 flex-shrink-0" />}
+                : <Avatar user={otherUser || {}} size="xs" className="w-11 h-11 md:w-8 md:h-8 flex-shrink-0" />}
               {/* Status dot */}
               <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full"
                 style={{
@@ -154,7 +156,7 @@ export function ConversationList({
             {/* Texte */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-1">
-                <span className={cx('text-[13px] truncate', unread > 0 ? 'font-bold' : 'font-medium')}>{title}</span>
+                <span className={cx('text-[15px] md:text-[13px] truncate', unread > 0 ? 'font-bold' : 'font-medium')}>{title}</span>
                 {unread > 0 && (
                   <span className="flex-shrink-0 min-w-[18px] h-[18px] rounded-full text-[9px] font-black flex items-center justify-center text-white px-1"
                     style={{ background: 'var(--sat-dnd)' }}>
@@ -163,7 +165,7 @@ export function ConversationList({
                 )}
               </div>
               {preview && (
-                <p className="text-[11px] truncate" style={{ color: 'var(--sat-faint)' }}>{preview}</p>
+                <p className="text-[13px] md:text-[11px] truncate" style={{ color: 'var(--sat-faint)' }}>{preview}</p>
               )}
             </div>
           </button>

@@ -388,7 +388,7 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
       {callType === 'video' ? (
         <div className="relative rounded-2xl overflow-hidden shadow-2xl"
           style={{ width: 'min(92vw, 720px)', background: 'var(--sat-void)', border: '1px solid var(--sat-border-2)' }}>
-          <div ref={videoContainerRef} className="relative aspect-video" style={{ background: 'var(--sat-void)' }}>
+          <div ref={videoContainerRef} className="relative aspect-[3/4] md:aspect-video max-h-[75dvh] md:max-h-none" style={{ background: 'var(--sat-void)' }}>
             <video ref={setRemoteEl} autoPlay playsInline className="w-full h-full object-cover" />
             {(status !== 'active' && status !== 'reconnecting') && (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3" style={{ background: 'var(--sat-void)' }}>

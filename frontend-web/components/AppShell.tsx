@@ -16,6 +16,7 @@ import { useGlobalChatEvents } from '@/hooks/useGlobalChatEvents';
 import { useBadgeStore } from '@/store/badgeStore';
 import { mediaUrl } from '@/lib/media';
 import { ToastHost } from '@/components/Toast';
+import { useMobileNavStore } from '@/store/mobileNavStore';
 
 // Pages affichées sans la barre de navigation de l'app (accueil + authentification)
 const AUTH_ROUTES = ['/', '/login', '/signup', '/forgot-password', '/reset-password'];
@@ -88,7 +89,39 @@ function NavIcon({
   );
 }
 
-function NotificationDropdown({ onClose }: { onClose: () => void }) {
+function TabBadge({ count }: { count?: number }) {
+  if (!count || count <= 0) return null;
+  return (
+    <span
+      className="absolute -top-1.5 -right-2.5 min-w-[17px] h-[17px] px-1 rounded-full text-[9px] font-black flex items-center justify-center text-white"
+      style={{ background: 'var(--sat-dnd)', border: '2px solid var(--sat-sidebar)' }}
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
+// Onglet de la barre du bas (téléphone)
+function MobileTab({ href, label, active, badge, children }: {
+  href: string; label: string; active: boolean; badge?: number; children: React.ReactNode;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-label={label}
+      className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-semibold min-w-0"
+      style={{ color: active ? 'var(--sat-accent)' : 'var(--sat-muted)' }}
+    >
+      <span className="relative">
+        {children}
+        <TabBadge count={badge} />
+      </span>
+      <span className="truncate max-w-full">{label}</span>
+    </Link>
+  );
+}
+
+function NotificationDropdown({ onClose, mobile = false }: { onClose: () => void; mobile?: boolean }) {
   const router = useRouter();
   const { notifications, markAllRead, remove, clearAll } = useNotificationStore();
   const [joiningId, setJoiningId] = useState<string | null>(null);
@@ -133,12 +166,14 @@ function NotificationDropdown({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="absolute left-[76px] z-50 w-80 rounded-2xl shadow-2xl overflow-hidden"
+      className={mobile
+        ? 'fixed left-2 right-2 z-50 rounded-2xl shadow-2xl overflow-hidden'
+        : 'absolute left-[76px] z-50 w-80 rounded-2xl shadow-2xl overflow-hidden'}
       style={{
-        top: 0,
+        ...(mobile ? { bottom: 'calc(64px + env(safe-area-inset-bottom))' } : { top: 0 }),
         background: 'var(--sat-surface)',
         border: '1px solid var(--sat-border-2)',
-        maxHeight: '80vh',
+        maxHeight: mobile ? '70dvh' : '80vh',
         display: 'flex',
         flexDirection: 'column',
       }}
@@ -190,7 +225,7 @@ function NotificationDropdown({ onClose }: { onClose: () => void }) {
                         {new Date(n.timestamp).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                       </p>
                     </div>
-                    <button aria-label="Supprimer la notification" onClick={() => remove(n.id)} className="w-5 h-5 flex items-center justify-center flex-shrink-0 opacity-0 hover:opacity-100 transition"
+                    <button aria-label="Supprimer la notification" onClick={() => remove(n.id)} className="w-5 h-5 flex items-center justify-center flex-shrink-0 md:opacity-0 hover:opacity-100 transition"
                       style={{ color: 'var(--sat-faint)' }}>✕</button>
                   </div>
 
@@ -252,6 +287,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const applyTheme = useThemeStore((s) => s.apply);
   const [notifOpen, setNotifOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
+  const notifRefMobile = useRef<HTMLDivElement>(null);
+  const mobileNavHidden = useMobileNavStore((s) => s.hidden);
   const unreadCount = useNotificationStore((s) => s.unreadCount());
 
   useEffect(() => { applyTheme(); }, []);
@@ -271,7 +308,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
+      const t = e.target as Node;
+      if (notifRef.current?.contains(t) || notifRefMobile.current?.contains(t)) return;
+      setNotifOpen(false);
     };
     if (notifOpen) document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -297,11 +336,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const avatarGradient = profile?.avatarColor || 'from-[#2563EB] to-[#60A5FA]';
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex flex-col md:flex-row h-dvh overflow-hidden">
 
       {/* ── Colonne 1 : Nav latérale (72px) ── */}
       <aside
-        className="flex flex-col items-center py-3 gap-1.5 flex-shrink-0 overflow-y-auto scrollbar-none"
+        className="hidden md:flex flex-col items-center py-3 gap-1.5 flex-shrink-0 overflow-y-auto scrollbar-none"
         style={{ width: 72, background: 'var(--sat-sidebar)', borderRight: '1px solid var(--sat-border)' }}
       >
         {/* Logo Saturn */}
@@ -403,9 +442,81 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* ── Contenu principal ── */}
-      <main className="flex-1 flex overflow-hidden">
+      <main className="flex-1 flex overflow-hidden min-h-0">
         {children}
       </main>
+
+      {/* ── Barre de navigation du bas (téléphone) ── */}
+      {!mobileNavHidden && (
+        <nav
+          className="md:hidden flex items-stretch justify-around flex-shrink-0"
+          style={{
+            background: 'var(--sat-sidebar)',
+            borderTop: '1px solid var(--sat-border)',
+            paddingBottom: 'env(safe-area-inset-bottom)',
+          }}
+        >
+          <MobileTab href="/communities" label="Communautés" active={pathname.startsWith('/communities')}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
+          </MobileTab>
+          <MobileTab href="/chat" label="Messages" active={pathname.startsWith('/chat')} badge={totalUnread}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+          </MobileTab>
+          <MobileTab href="/friends" label="Amis" active={pathname.startsWith('/friends')} badge={friendRequestsBadge}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+          </MobileTab>
+          <MobileTab href="/calls" label="Appels" active={pathname.startsWith('/calls')} badge={missedCallsBadge}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1.27h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.84a16 16 0 0 0 6.25 6.25l1.95-1.95a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+            </svg>
+          </MobileTab>
+          <div ref={notifRefMobile} className="flex-1 flex">
+            <button
+              onClick={() => setNotifOpen((v) => !v)}
+              aria-label="Notifications"
+              className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-semibold"
+              style={{ color: notifOpen ? 'var(--sat-accent)' : 'var(--sat-muted)' }}
+            >
+              <span className="relative">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+                <TabBadge count={unreadCount} />
+              </span>
+              Alertes
+            </button>
+            {notifOpen && <NotificationDropdown mobile onClose={() => setNotifOpen(false)} />}
+          </div>
+          <Link
+            href="/profile"
+            aria-label="Profil"
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-semibold"
+            style={{ color: pathname.startsWith('/profile') ? 'var(--sat-accent)' : 'var(--sat-muted)' }}
+          >
+            <span
+              className="w-[22px] h-[22px] rounded-full overflow-hidden flex items-center justify-center text-[10px] font-black"
+              style={{ boxShadow: pathname.startsWith('/profile') ? '0 0 0 2px var(--sat-accent)' : '0 0 0 1.5px var(--sat-border-2)' }}
+            >
+              {profile?.image ? (
+                <img src={mediaUrl(profile.image)} alt="" className="w-full h-full object-cover" />
+              ) : (
+                <span className={`w-full h-full flex items-center justify-center text-white bg-gradient-to-br ${avatarGradient}`}>{initial}</span>
+              )}
+            </span>
+            Profil
+          </Link>
+        </nav>
+      )}
 
       {/* ── Appels (global, ring partout) ── */}
       <CallManager />

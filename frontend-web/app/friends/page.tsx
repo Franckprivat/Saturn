@@ -28,12 +28,12 @@ function UserCard({ user, right, sub, subColor, online }: {
 }) {
   return (
     <div
-      className="flex items-center justify-between rounded-xl px-4 py-3 transition"
+      className="flex items-center justify-between gap-2 rounded-xl px-3 md:px-4 py-3 transition"
       style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border)' }}
       onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--sat-hover)')}
       onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--sat-surface)')}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0">
         <div className="relative flex-shrink-0">
           <Avatar user={user} size="md" className="w-11 h-11 rounded-2xl" />
           {online !== undefined && (
@@ -44,10 +44,10 @@ function UserCard({ user, right, sub, subColor, online }: {
               }} />
           )}
         </div>
-        <div>
-          <p className="text-sm font-semibold" style={{ color: 'var(--sat-text)' }}>{user.nickname || '—'}</p>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold truncate" style={{ color: 'var(--sat-text)' }}>{user.nickname || '—'}</p>
           {sub
-            ? <p className="text-xs" style={{ color: subColor ?? 'var(--sat-muted)' }}>{sub}</p>
+            ? <p className="text-xs truncate" style={{ color: subColor ?? 'var(--sat-muted)' }}>{sub}</p>
             : user.bio && <p className="text-xs truncate max-w-[180px]" style={{ color: 'var(--sat-muted)' }}>{user.bio}</p>
           }
         </div>
@@ -166,21 +166,21 @@ export default function FriendsPage() {
     );
 
   return (
-    <div className="flex w-full h-full" style={{ background: 'var(--sat-main)', color: 'var(--sat-text)' }}>
+    <div className="flex flex-col md:flex-row w-full h-full min-w-0" style={{ background: 'var(--sat-main)', color: 'var(--sat-text)' }}>
 
-      {/* Sidebar */}
-      <aside className="w-60 flex flex-col flex-shrink-0" style={{ background: 'var(--sat-panel)', borderRight: '1px solid var(--sat-border)' }}>
+      {/* Sidebar (téléphone : barre d'onglets en haut) */}
+      <aside className="w-full md:w-60 flex flex-col flex-shrink-0 border-b md:border-b-0 md:border-r" style={{ background: 'var(--sat-panel)', borderColor: 'var(--sat-border)' }}>
         <div className="px-4 h-12 flex items-center" style={{ borderBottom: '1px solid var(--sat-border)' }}>
           <h1 className="text-[15px] font-bold">Amis</h1>
         </div>
-        <nav className="px-2 pt-3 flex flex-col gap-0.5 text-[13px]">
+        <nav className="px-2 py-2 md:pb-0 md:pt-3 flex flex-row md:flex-col gap-1 md:gap-0.5 text-[13px] overflow-x-auto scrollbar-none">
           {([
             ['friends', 'Tous les amis'],
             ['requests', 'Demandes'],
             ['discover', 'Ajouter un ami'],
           ] as [Tab, string][]).map(([key, label]) => (
             <button key={key} onClick={() => setTab(key)}
-              className="w-full text-left px-3 py-2 rounded-md transition flex items-center justify-between font-medium"
+              className="md:w-full text-left px-3 py-2 rounded-md transition flex items-center justify-between gap-2 font-medium whitespace-nowrap flex-shrink-0"
               style={{
                 background: tab === key ? 'var(--sat-active)' : 'transparent',
                 color: tab === key ? 'var(--sat-text)' : 'var(--sat-muted)',
@@ -197,8 +197,8 @@ export default function FriendsPage() {
       </aside>
 
       {/* Contenu */}
-      <section className="flex-1 flex flex-col overflow-hidden">
-        <div className="px-6 h-12 flex flex-col justify-center" style={{ borderBottom: '1px solid var(--sat-border)' }}>
+      <section className="flex-1 flex flex-col overflow-hidden min-h-0">
+        <div className="hidden md:flex px-6 h-12 flex-col justify-center" style={{ borderBottom: '1px solid var(--sat-border)' }}>
           <h2 className="text-[15px] font-bold leading-tight">
             {tab === 'friends' ? 'Tous les amis' : tab === 'requests' ? "Demandes d'amis" : 'Ajouter un ami'}
           </h2>
@@ -210,12 +210,12 @@ export default function FriendsPage() {
         </div>
 
         {error && (
-          <div className="mx-6 mt-3 flex gap-2 bg-red-50 border border-red-200 text-[#EF4444] px-4 py-2.5 rounded-xl text-xs">
+          <div className="mx-3 md:mx-6 mt-3 flex gap-2 bg-red-50 border border-red-200 text-[#EF4444] px-4 py-2.5 rounded-xl text-xs">
             ⚠ {error}
           </div>
         )}
 
-        <div className="flex-1 px-6 py-4 overflow-y-auto space-y-2">
+        <div className="flex-1 px-3 md:px-6 py-4 overflow-y-auto space-y-2">
 
           {/* ── Amis ── */}
           {tab === 'friends' && (
@@ -318,7 +318,7 @@ export default function FriendsPage() {
                   onChange={(e) => setSearch(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                   placeholder="Rechercher par pseudo..."
-                  className="flex-1 px-4 py-2.5 rounded-xl text-sm focus:outline-none transition"
+                  className="flex-1 min-w-0 px-4 py-2.5 rounded-xl text-sm focus:outline-none transition"
                   style={{ background: 'var(--sat-surface)', border: '1px solid var(--sat-border-2)', color: 'var(--sat-text)' }}
                 />
                 <button onClick={handleSearch}

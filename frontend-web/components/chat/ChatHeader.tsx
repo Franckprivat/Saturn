@@ -53,7 +53,7 @@ export function ChatHeader({
               title={currentConv.type === 'DM' ? 'Infos du contact' : 'Infos du groupe'}>
               {getTitle(currentConv)}
             </button>
-            <span className="text-xs" style={{ color: online ? 'var(--sat-online)' : 'var(--sat-faint)' }}>
+            <span className="text-xs truncate min-w-0" style={{ color: online ? 'var(--sat-online)' : 'var(--sat-faint)' }}>
               {currentConv.type === 'GROUP'
                 ? `— ${currentConv.participants.length} membres`
                 : online
