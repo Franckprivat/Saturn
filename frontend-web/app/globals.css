@@ -65,21 +65,23 @@ html, body {
   padding: 0;
   background: var(--sat-void);
   color: var(--sat-text);
-  font-family: var(--font-jakarta), 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  font-family: var(--font-body), 'Helvetica Neue', Helvetica, Arial, sans-serif;
   font-size: 15px;
-  line-height: 1.375;
+  line-height: 1.4;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Titres en serif éditorial — signature Claude */
-h1 {
-  font-family: var(--font-serif), Georgia, 'Times New Roman', serif;
-  letter-spacing: -0.01em;
-  font-weight: 600;
+/* Titres et marque en Montserrat, texte courant en Source Sans 3 */
+h1, h2, h3 {
+  font-family: var(--font-heading), 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  letter-spacing: -0.02em;
 }
 
+h1 { font-weight: 600; }
+
 .font-display {
-  font-family: var(--font-serif), Georgia, 'Times New Roman', serif;
+  font-family: var(--font-heading), 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  letter-spacing: -0.02em;
 }
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
