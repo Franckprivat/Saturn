@@ -12,6 +12,7 @@ import { FriendsService } from './friends.service';
 import { ChatGateway } from '../chat/chat.gateway';
 import { getSessionUser } from '../auth/get-session-user';
 import type { Request } from 'express';
+import { FriendRequestDto } from './dto/friend-request.dto';
 
 function briefName(
   u: { nickname?: string | null; email?: string | null } | null,
@@ -35,7 +36,7 @@ export class FriendsController {
   @Post('requests')
   async sendRequest(
     @Req() req: Request,
-    @Body('addresseeId') addresseeId: string,
+    @Body() { addresseeId }: FriendRequestDto,
   ) {
     const user = await getSessionUser(req);
     const result = await this.friendsService.sendFriendRequest(

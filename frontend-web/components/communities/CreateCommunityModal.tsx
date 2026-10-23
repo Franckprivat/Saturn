@@ -74,13 +74,13 @@ export function CreateCommunityModal({ onClose, onCreated }: CreateCommunityModa
               {tab === t && <span className="absolute bottom-0 left-0 right-0 h-0.5" style={{ background: 'var(--sat-accent)' }} />}
             </button>
           ))}
-          <button onClick={onClose} className="px-4 text-lg" style={{ color: 'var(--sat-muted)' }}>✕</button>
+          <button aria-label="Fermer" onClick={onClose} className="px-4 text-lg" style={{ color: 'var(--sat-muted)' }}>✕</button>
         </div>
 
         {tab === 'create' ? (
           <div className="p-5 space-y-4">
             <div className="flex flex-col items-center gap-3">
-              <button onClick={() => fileRef.current?.click()}
+              <button aria-label="Choisir l'image de la communauté" onClick={() => fileRef.current?.click()}
                 className="w-20 h-20 rounded-full flex items-center justify-center overflow-hidden transition"
                 style={{ background: image ? 'transparent' : 'var(--sat-hover)', border: '2px dashed var(--sat-border-2)' }}>
                 {image

@@ -1,13 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthService } from './auth.service';
-import { mockJwtProvider, mockPrismaProvider } from '../../test/mock-providers';
+import { mockPrismaProvider } from '../../test/mock-providers';
 
 describe('AuthService', () => {
   let service: AuthService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [AuthService, mockPrismaProvider, mockJwtProvider],
+      providers: [AuthService, mockPrismaProvider],
     }).compile();
 
     service = module.get<AuthService>(AuthService);

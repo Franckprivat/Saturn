@@ -47,6 +47,8 @@ export const useNotificationStore = create<NotificationStore>()(
       clearAll: () => set({ notifications: [] }),
       unreadCount: () => get().notifications.filter((n) => !n.read).length,
     }),
-    { name: 'saturn_notifications' },
+    // Réhydraté après le montage (AppShell) : lu pendant le rendu initial, le
+    // localStorage donnait un HTML différent du serveur (erreur React #418)
+    { name: 'saturn_notifications', skipHydration: true },
   ),
 );

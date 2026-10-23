@@ -6,6 +6,7 @@ import { PhoneIcon, PhoneOffIcon, MicIcon, MicOffIcon, VideoIcon, VideoOffIcon }
 import { saveCallEntry } from '@/lib/callLog';
 import { mediaUrl } from '@/lib/media';
 import { setCallTab, clearCallTab } from '@/lib/callTab';
+import { currentIceConfig, prefetchIceConfig } from '@/lib/iceServers';
 
 interface CallModalProps {
   socket: Socket | null;
@@ -19,12 +20,6 @@ interface CallModalProps {
 }
 
 const RING_TIMEOUT = 35000;
-const ICE_CONFIG: RTCConfiguration = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ],
-};
 
 type Status = 'ringing' | 'connecting' | 'active' | 'reconnecting' | 'ended';
 type Quality = 'good' | 'medium' | 'poor';
@@ -152,7 +147,7 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
   };
 
   const buildPeer = useCallback((stream: MediaStream) => {
-    const pc = new RTCPeerConnection(ICE_CONFIG);
+    const pc = new RTCPeerConnection(currentIceConfig());
     pcRef.current = pc;
     stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
@@ -245,6 +240,9 @@ export function CallModal({ socket, conversationId, callType, isIncoming, caller
   const handleEnd = useCallback(() => finish(true), [finish]);
 
   // ── Démarrage appel sortant ──
+  // Serveurs ICE (TURN) : chargés dès l'ouverture, avant la création du peer
+  useEffect(() => { prefetchIceConfig(); }, []);
+
   useEffect(() => {
     if (isIncoming) return;
     let cancelled = false;
@@ -495,14 +493,14 @@ function CallControls({
       {status === 'ringing' && isIncoming ? (
         <div className="flex gap-8">
           <div className="flex flex-col items-center gap-2">
-            <button onClick={onReject} className="w-16 h-16 rounded-full flex items-center justify-center text-white transition hover:scale-105 active:scale-95"
+            <button aria-label="Refuser l'appel" onClick={onReject} className="w-16 h-16 rounded-full flex items-center justify-center text-white transition hover:scale-105 active:scale-95"
               style={{ background: '#EF4444', boxShadow: '0 6px 20px rgba(239,68,68,0.4)' }}>
               <PhoneOffIcon size={26} />
             </button>
             <span className="text-[11px] font-medium" style={{ color: 'var(--sat-muted)' }}>Refuser</span>
           </div>
           <div className="flex flex-col items-center gap-2">
-            <button onClick={onAccept} className="w-16 h-16 rounded-full flex items-center justify-center text-white transition hover:scale-105 active:scale-95"
+            <button aria-label="Accepter l'appel" onClick={onAccept} className="w-16 h-16 rounded-full flex items-center justify-center text-white transition hover:scale-105 active:scale-95"
               style={{ background: 'linear-gradient(135deg,var(--sat-accent),var(--sat-accent2))', boxShadow: '0 6px 20px var(--sat-accent-glow)' }}>
               <PhoneIcon size={26} />
             </button>
@@ -516,7 +514,7 @@ function CallControls({
       ) : (
         <div className="flex gap-3 items-center">
           <div className="flex flex-col items-center gap-1.5">
-            <button onClick={onToggleMute} className="w-12 h-12 rounded-full flex items-center justify-center transition hover:scale-105 active:scale-95"
+            <button aria-label={muted ? 'Réactiver le micro' : 'Couper le micro'} onClick={onToggleMute} className="w-12 h-12 rounded-full flex items-center justify-center transition hover:scale-105 active:scale-95"
               style={{
                 background: muted ? '#EF4444' : 'var(--sat-hover)',
                 color: muted ? '#fff' : 'var(--sat-text)',
@@ -528,7 +526,7 @@ function CallControls({
           </div>
           {callType === 'video' && (
             <div className="flex flex-col items-center gap-1.5">
-              <button onClick={onToggleCamera} className="w-12 h-12 rounded-full flex items-center justify-center transition hover:scale-105 active:scale-95"
+              <button aria-label={cameraOff ? 'Activer la caméra' : 'Couper la caméra'} onClick={onToggleCamera} className="w-12 h-12 rounded-full flex items-center justify-center transition hover:scale-105 active:scale-95"
                 style={{
                   background: cameraOff ? '#EF4444' : 'var(--sat-hover)',
                   color: cameraOff ? '#fff' : 'var(--sat-text)',
@@ -540,7 +538,7 @@ function CallControls({
             </div>
           )}
           <div className="flex flex-col items-center gap-1.5">
-            <button onClick={onEnd} className="w-14 h-14 rounded-full flex items-center justify-center text-white transition hover:scale-105 active:scale-95"
+            <button aria-label="Raccrocher" onClick={onEnd} className="w-14 h-14 rounded-full flex items-center justify-center text-white transition hover:scale-105 active:scale-95"
               style={{ background: '#EF4444', boxShadow: '0 6px 20px rgba(239,68,68,0.4)' }}>
               <PhoneOffIcon size={24} />
             </button>

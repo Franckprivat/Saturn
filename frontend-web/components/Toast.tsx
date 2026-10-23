@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 export type ToastType = 'success' | 'error' | 'info';
 
@@ -18,7 +18,7 @@ export function toast(message: string, type: ToastType = 'info') {
 
 export function ToastContainer({ toasts, onRemove }: { toasts: ToastItem[]; onRemove: (id: string) => void }) {
   return (
-    <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
+    <div role="status" aria-live="polite" className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
       {toasts.map((t) => (
         <ToastBubble key={t.id} toast={t} onRemove={onRemove} />
       ))}
@@ -44,7 +44,7 @@ function ToastBubble({ toast: t, onRemove }: { toast: ToastItem; onRemove: (id: 
     >
       <span className="flex-shrink-0 w-5 h-5 rounded-full bg-white bg-opacity-20 flex items-center justify-center text-xs font-black">{icon}</span>
       <span className="flex-1">{t.message}</span>
-      <button onClick={() => onRemove(t.id)} className="flex-shrink-0 opacity-70 hover:opacity-100 transition text-xs">✕</button>
+      <button aria-label="Fermer la notification" onClick={() => onRemove(t.id)} className="flex-shrink-0 opacity-70 hover:opacity-100 transition text-xs">✕</button>
     </div>
   );
 }
@@ -67,7 +67,7 @@ export function ToastProvider({ children, setToasts }: { children: React.ReactNo
 /** Hôte autonome : gère son propre état, à poser une fois par page. */
 export function ToastHost() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const remove = (id: string) => setToasts((prev) => prev.filter((t) => t.id !== id));
+  const remove = useCallback((id: string) => setToasts((prev) => prev.filter((t) => t.id !== id)), []);
   return (
     <ToastProvider setToasts={setToasts}>
       <ToastContainer toasts={toasts} onRemove={remove} />

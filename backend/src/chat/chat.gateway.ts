@@ -8,9 +8,8 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { PrismaService } from '../prisma/prisma.service';
-import { MessagesService } from '../messages/messages.service';
+import { MessagesService, canSeeMessage } from '../messages/messages.service';
 import {
-  BadRequestException,
   ForbiddenException,
   Logger,
   NotFoundException,
@@ -21,6 +20,15 @@ import { auth } from '../auth/better-auth.instance';
 
 interface AuthedSocket extends Socket {
   user?: { id: string; email: string };
+}
+
+interface SocketData {
+  user?: { id: string; email: string };
+}
+
+/** Utilisateur d'un socket, y compris ceux renvoyés par fetchSockets(). */
+function socketUserId(s: { data: unknown }): string | undefined {
+  return (s.data as SocketData | undefined)?.user?.id;
 }
 
 @WebSocketGateway({
@@ -58,17 +66,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private leaveAllVoiceRooms(client: AuthedSocket) {
-    for (const [channelId, room] of this.voiceRooms.entries()) {
-      if (room.peers.has(client.id)) {
-        const userId = room.peers.get(client.id);
-        room.peers.delete(client.id);
-        client
-          .to(`voice:${channelId}`)
-          .emit('voice_peer_left', { channelId, socketId: client.id, userId });
-        if (room.peers.size === 0) this.voiceRooms.delete(channelId);
-        this.broadcastVoiceState(channelId, room.communityId);
-      }
-    }
+    this.leaveVoiceRoomsWhere(() => true, client.id);
   }
 
   private async ensureCommunityMember(communityId: string, userId: string) {
@@ -76,6 +74,110 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       where: { communityId, userId },
     });
     if (!member) throw new ForbiddenException('Not a community member');
+  }
+
+  /**
+   * Émet un évènement lié à un message à sa seule audience : toute la salle
+   * pour un message normal, l'auteur et les destinataires pour un chuchotement.
+   */
+  async emitToMessageAudience(
+    message: {
+      conversationId: string;
+      isWhisper: boolean;
+      senderId: string;
+      whisperTo: string[];
+    },
+    event: string,
+    payload: any,
+  ) {
+    if (!message.isWhisper) {
+      this.server.to(message.conversationId).emit(event, payload);
+      return;
+    }
+    const sockets = await this.server.in(message.conversationId).fetchSockets();
+    for (const s of sockets) {
+      const userId = socketUserId(s);
+      if (userId && canSeeMessage(message, userId)) s.emit(event, payload);
+    }
+  }
+
+  /** Retire un voix-participant de tous les salons vocaux (déconnexion, exclusion). */
+  private leaveVoiceRoomsWhere(
+    predicate: (channelId: string, communityId: string) => boolean,
+    socketId: string,
+  ) {
+    for (const [channelId, room] of this.voiceRooms.entries()) {
+      if (!predicate(channelId, room.communityId) || !room.peers.has(socketId))
+        continue;
+      const userId = room.peers.get(socketId);
+      room.peers.delete(socketId);
+      this.server
+        .to(`voice:${channelId}`)
+        .emit('voice_peer_left', { channelId, socketId, userId });
+      this.server.in(socketId).socketsLeave(`voice:${channelId}`);
+      if (room.peers.size === 0) this.voiceRooms.delete(channelId);
+      this.broadcastVoiceState(channelId, room.communityId);
+    }
+  }
+
+  /** Un membre retiré d'une conversation ne doit plus recevoir ses évènements. */
+  evictFromConversation(userId: string, conversationId: string) {
+    this.server.in(`user:${userId}`).socketsLeave(conversationId);
+  }
+
+  /** Conversation supprimée : plus personne ne reste dans sa salle. */
+  closeConversationRoom(conversationId: string) {
+    this.server.in(conversationId).socketsLeave(conversationId);
+  }
+
+  /** Exclusion, bannissement ou départ d'une communauté : coupe tout le temps réel associé. */
+  async evictFromCommunity(userId: string, communityId: string) {
+    const channels = await this.prisma.channel.findMany({
+      where: { communityId, conversationId: { not: null } },
+      select: { conversationId: true },
+    });
+    const rooms = [
+      `community:${communityId}`,
+      ...channels.map((c) => c.conversationId!),
+    ];
+    const sockets = await this.server.in(`user:${userId}`).fetchSockets();
+    for (const s of sockets) {
+      this.leaveVoiceRoomsWhere((_, cid) => cid === communityId, s.id);
+    }
+    this.server.in(`user:${userId}`).socketsLeave(rooms);
+  }
+
+  /**
+   * Utilisateurs autorisés à voir la présence de `userId` : amis, membres de ses
+   * conversations et de ses communautés, hors blocages.
+   */
+  private async presenceAudience(userId: string): Promise<string[]> {
+    const [friendships, participants, members] = await Promise.all([
+      this.prisma.friendship.findMany({
+        where: { OR: [{ requesterId: userId }, { addresseeId: userId }] },
+        select: { requesterId: true, addresseeId: true, status: true },
+      }),
+      this.prisma.conversationParticipant.findMany({
+        where: { conversation: { participants: { some: { userId } } } },
+        select: { userId: true },
+      }),
+      this.prisma.communityMember.findMany({
+        where: { community: { members: { some: { userId } } } },
+        select: { userId: true },
+      }),
+    ]);
+    const other = (f: { requesterId: string; addresseeId: string }) =>
+      f.requesterId === userId ? f.addresseeId : f.requesterId;
+    const blocked = new Set(
+      friendships.filter((f) => f.status === 'BLOCKED').map(other),
+    );
+    const ids = new Set<string>([
+      ...friendships.filter((f) => f.status === 'ACCEPTED').map(other),
+      ...participants.map((p) => p.userId),
+      ...members.map((m) => m.userId),
+    ]);
+    ids.delete(userId);
+    return Array.from(ids).filter((id) => !blocked.has(id));
   }
 
   async handleConnection(client: AuthedSocket) {
@@ -90,14 +192,22 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       }
 
       client.user = { id: session.user.id, email: session.user.email };
+      // Aussi dans socket.data : seule propriété garantie sur les sockets de fetchSockets()
+      (client.data as SocketData).user = client.user;
       // Salle personnelle pour les notifications ciblées
       await client.join(`user:${session.user.id}`);
       const prev = this.onlineUsers.get(session.user.id) ?? 0;
       this.onlineUsers.set(session.user.id, prev + 1);
-      if (prev === 0)
-        this.server.emit('user_online', { userId: session.user.id });
+      // Présence partagée uniquement avec les contacts (amis, conversations,
+      // communautés communes), pas avec tous les comptes connectés.
+      const audience = await this.presenceAudience(session.user.id);
+      if (prev === 0 && audience.length) {
+        this.server
+          .to(audience.map((id) => `user:${id}`))
+          .emit('user_online', { userId: session.user.id });
+      }
       client.emit('online_users', {
-        userIds: Array.from(this.onlineUsers.keys()),
+        userIds: audience.filter((id) => this.onlineUsers.has(id)),
       });
       // Plancher de « vu à… » dès la connexion : si le serveur meurt brutalement
       // (pas de handleDisconnect), le dernier passage reste au moins daté d'ici.
@@ -113,7 +223,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  handleDisconnect(client: AuthedSocket) {
+  async handleDisconnect(client: AuthedSocket) {
     if (!client.user) return;
     this.leaveAllVoiceRooms(client);
     const userId = client.user.id;
@@ -125,10 +235,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.prisma.user
         .update({ where: { id: userId }, data: { lastSeenAt } })
         .catch(() => {});
-      this.server.emit('user_offline', {
-        userId,
-        lastSeenAt: lastSeenAt.toISOString(),
-      });
+      const audience = await this.presenceAudience(userId).catch(() => []);
+      // Reconnecté entre-temps (rechargement de page) : ne pas l'annoncer hors ligne
+      if (audience.length && !this.onlineUsers.has(userId)) {
+        this.server
+          .to(audience.map((id) => `user:${id}`))
+          .emit('user_offline', {
+            userId,
+            lastSeenAt: lastSeenAt.toISOString(),
+          });
+      }
     } else {
       this.onlineUsers.set(userId, count);
     }
@@ -178,7 +294,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { conversationId: string },
   ) {
-    if (!client.user) return;
+    if (!client.user || !client.rooms.has(data?.conversationId)) return;
     client.to(data.conversationId).emit('user_typing', {
       userId: client.user.id,
       conversationId: data.conversationId,
@@ -190,7 +306,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { conversationId: string },
   ) {
-    if (!client.user) return;
+    if (!client.user || !client.rooms.has(data?.conversationId)) return;
     client.to(data.conversationId).emit('user_stopped_typing', {
       userId: client.user.id,
       conversationId: data.conversationId,
@@ -213,12 +329,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {
     if (!client.user) throw new UnauthorizedException();
 
-    const content = (data.content ?? '').trim();
-    if (!content && !data.fileUrl)
-      throw new BadRequestException('Message vide');
-    if (content.length > 4000)
-      throw new BadRequestException('Message trop long (4000 caractères max)');
-
     const file = data.fileUrl
       ? {
           fileUrl: data.fileUrl,
@@ -227,27 +337,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         }
       : undefined;
 
+    // Validation (longueur, pièce jointe, destinataires) faite dans le service
     const message = await this.messagesService.createMessage(
       client.user.id,
       data.conversationId,
-      content,
+      data.content ?? '',
       file,
       data.whisperTo,
       data.replyToId,
     );
 
-    if (message.isWhisper && message.whisperTo?.length) {
-      const allowed = new Set([...message.whisperTo, client.user.id]);
-      const sockets = await this.server.in(data.conversationId).fetchSockets();
-      for (const s of sockets) {
-        // L'adapter en mémoire renvoie les vraies instances de Socket
-        const authed = s as unknown as AuthedSocket;
-        if (authed.user && allowed.has(authed.user.id))
-          s.emit('new_message', message);
-      }
-    } else {
-      this.server.to(data.conversationId).emit('new_message', message);
-    }
+    await this.emitToMessageAudience(message, 'new_message', message);
 
     // Notification push aux participants absents de la salle
     const senderName =
@@ -257,33 +357,34 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const preview = message.content
       ? message.content.substring(0, 80)
       : '📎 Fichier';
-    const socketsInRoom = await this.server
-      .in(data.conversationId)
-      .fetchSockets();
-    const usersInRoom = new Set(
-      socketsInRoom
-        .map((s) => (s as unknown as AuthedSocket).user?.id)
-        .filter(Boolean),
-    );
-
-    const conv = await this.prisma.conversation.findUnique({
-      where: { id: data.conversationId },
-      include: { participants: { select: { userId: true } } },
+    // Destinataires : participants (salons exclus : trop de membres), filtrés
+    // sur l'audience du chuchotement. Une seule émission, sans fetchSockets :
+    // `except` écarte les sockets qui ont déjà la conversation ouverte.
+    const participants = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId: data.conversationId },
+      select: { userId: true },
     });
-    if (conv) {
-      for (const p of conv.participants) {
-        if (p.userId !== client.user.id && !usersInRoom.has(p.userId)) {
-          this.server.to(`user:${p.userId}`).emit('notification', {
-            type: 'message',
-            title: senderName,
-            body: preview,
-            href: `/chat?conversationId=${data.conversationId}`,
-            conversationId: data.conversationId,
-            image: message.sender?.image,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      }
+    const rooms = participants
+      .map((p) => p.userId)
+      .filter(
+        (id) =>
+          id !== client.user!.id &&
+          (!message.isWhisper || message.whisperTo.includes(id)),
+      )
+      .map((id) => `user:${id}`);
+    if (rooms.length) {
+      this.server
+        .to(rooms)
+        .except(data.conversationId)
+        .emit('notification', {
+          type: 'message',
+          title: senderName,
+          body: preview,
+          href: `/chat?conversationId=${data.conversationId}`,
+          conversationId: data.conversationId,
+          image: message.sender?.image,
+          timestamp: new Date().toISOString(),
+        });
     }
 
     return message;
@@ -300,7 +401,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.user.id,
       data.content,
     );
-    this.server.to(updated.conversationId).emit('message_edited', updated);
+    await this.emitToMessageAudience(updated, 'message_edited', updated);
     return updated;
   }
 
@@ -314,7 +415,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       data.messageId,
       client.user.id,
     );
-    this.server.to(updated.conversationId).emit('message_deleted', {
+    await this.emitToMessageAudience(updated, 'message_deleted', {
       messageId: updated.id,
       conversationId: updated.conversationId,
     });
@@ -327,16 +428,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { messageId: string; emoji: string },
   ) {
     if (!client.user) throw new UnauthorizedException();
-    const result = await this.messagesService.toggleReaction(
+    const { message, ...result } = await this.messagesService.toggleReaction(
       data.messageId,
       client.user.id,
       data.emoji,
     );
-    this.server.to(result.conversationId).emit('reaction_updated', {
-      messageId: result.messageId,
-      conversationId: result.conversationId,
-      reactions: result.reactions,
-    });
+    await this.emitToMessageAudience(message, 'reaction_updated', result);
     return result;
   }
 
@@ -346,7 +443,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { conversationId: string },
   ) {
     if (!client.user) return;
-    await this.messagesService.markAsRead(data.conversationId, client.user.id);
+    const { count } = await this.messagesService.markAsRead(
+      data.conversationId,
+      client.user.id,
+    );
+    if (count === 0) return;
     client.to(data.conversationId).emit('messages_read', {
       conversationId: data.conversationId,
       userId: client.user.id,
@@ -377,19 +478,36 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   // ── WebRTC Signaling ──────────────────────────────────────────────────────────
 
-  /** User IDs des autres participants d'une conversation (pour le routage des appels). */
+  /**
+   * User IDs des autres participants d'une conversation (pour le routage des appels).
+   * Vide si l'émetteur n'en fait pas partie, ou si c'est un DM bloqué.
+   */
   private async otherParticipantIds(
     conversationId: string,
     excludeUserId: string,
   ): Promise<string[]> {
+    if (typeof conversationId !== 'string') return [];
     const conv = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
       include: { participants: { select: { userId: true } } },
     });
-    if (!conv) return [];
-    return conv.participants
-      .map((p) => p.userId)
-      .filter((id) => id !== excludeUserId);
+    if (!conv || conv.type === 'CHANNEL') return [];
+    const ids = conv.participants.map((p) => p.userId);
+    if (!ids.includes(excludeUserId)) return [];
+    const others = ids.filter((id) => id !== excludeUserId);
+    if (conv.type === 'DM' && others.length) {
+      const blocked = await this.prisma.friendship.count({
+        where: {
+          status: 'BLOCKED',
+          OR: [
+            { requesterId: excludeUserId, addresseeId: others[0] },
+            { requesterId: others[0], addresseeId: excludeUserId },
+          ],
+        },
+      });
+      if (blocked) return [];
+    }
+    return others;
   }
 
   /** Relaye un évènement d'appel à la salle personnelle de chaque autre participant. */
@@ -419,6 +537,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     },
   ) {
     if (!client.user) return;
+    const targets = await this.otherParticipantIds(
+      data.conversationId,
+      client.user.id,
+    );
+    if (!targets.length) return;
 
     const caller = await this.prisma.user.findUnique({
       where: { id: client.user.id },
@@ -599,6 +722,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @MessageBody() data: { targetSocketId: string; signal: unknown },
   ) {
     if (!client.user) return;
+    // Signalisation uniquement entre pairs d'un même salon vocal
+    const sharesRoom = Array.from(this.voiceRooms.values()).some(
+      (room) =>
+        room.peers.has(client.id) && room.peers.has(data?.targetSocketId),
+    );
+    if (!sharesRoom) return;
     this.server.to(data.targetSocketId).emit('voice_signal', {
       fromSocketId: client.id,
       fromUserId: client.user.id,
@@ -611,7 +740,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { channelId: string; muted: boolean },
   ) {
-    if (!client.user) return;
+    if (
+      !client.user ||
+      !this.voiceRooms.get(data?.channelId)?.peers.has(client.id)
+    )
+      return;
     client.to(`voice:${data.channelId}`).emit('voice_peer_mute', {
       socketId: client.id,
       userId: client.user.id,

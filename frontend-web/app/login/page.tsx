@@ -8,7 +8,8 @@ import { DemoLoginButton } from '@/components/DemoLoginButton';
 
 // N'accepte que les chemins internes (« //site.com » mènerait hors de l'app)
 function safeRedirect(target: string | null) {
-  return target && target.startsWith('/') && !target.startsWith('//') ? target : '/chat';
+  // Redirection interne uniquement (pas de « //site.com », « /\\site.com » ni d'URL absolue)
+  return target && /^\/(?![/\\])/.test(target) ? target : '/chat';
 }
 
 export default function LoginPage() {
@@ -24,7 +25,9 @@ export default function LoginPage() {
     setLoading(true);
     const { error: authError } = await authClient.signIn.email({ email, password });
     if (authError) {
-      setError(authError.message || 'Erreur lors de la connexion');
+      setError(authError.code === 'EMAIL_NOT_VERIFIED'
+        ? 'Confirme d\'abord ton adresse : un nouveau lien vient de t\'être envoyé par e-mail.'
+        : authError.message || 'Erreur lors de la connexion');
       setLoading(false);
       return;
     }

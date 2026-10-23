@@ -44,7 +44,6 @@ const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const USER_BRIEF = {
   id: true,
   nickname: true,
-  email: true,
   image: true,
   avatarColor: true,
 } as const;
@@ -226,6 +225,7 @@ export class InvitationsService {
       await this.prisma.communityMember.delete({
         where: { communityId_userId: { communityId, userId: targetUserId } },
       });
+      await this.chatGateway.evictFromCommunity(targetUserId, communityId);
     }
     await this.prisma.communityBan.upsert({
       where: { communityId_userId: { communityId, userId: targetUserId } },
@@ -894,7 +894,7 @@ export class InvitationsService {
     user: {
       id: string;
       nickname: string | null;
-      email: string | null;
+      email?: string | null;
       image: string | null;
     } | null,
   ) {

@@ -1,6 +1,8 @@
 import { Controller, Get } from '@nestjs/common';
 import { getDemoConfig } from './demo.config';
+import { Public } from '../auth/public.decorator';
 
+@Public()
 @Controller('demo')
 export class DemoController {
   // Public : le front affiche le bouton « Essayer la démo » seulement si actif.

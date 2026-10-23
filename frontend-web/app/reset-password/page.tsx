@@ -79,7 +79,7 @@ function ResetPasswordForm() {
             required
             className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 pr-10 text-sm text-[#1E293B] focus:outline-none focus:border-[#2563EB] focus:ring-2 focus:ring-[#2563EB]/20 transition placeholder:text-slate-400"
           />
-          <button
+          <button aria-label={showPass ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
             type="button"
             onClick={() => setShowPass((v) => !v)}
             className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#1E293B] transition text-xs"

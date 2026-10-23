@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import type { Socket } from 'socket.io-client';
 import { api } from '@/lib/api';
+import { prefetchIceConfig } from '@/lib/iceServers';
 import { useChatStore, type ChatMessage, type Conversation, type MessageReaction } from '@/store/chatStore';
 import { useBadgeStore } from '@/store/badgeStore';
 import { usePresenceStore } from '@/store/presenceStore';
@@ -20,6 +21,9 @@ import { usePresenceStore } from '@/store/presenceStore';
 export function useGlobalChatEvents(socket: Socket | null) {
   const joinedRef = useRef<Set<string>>(new Set());
   const refreshingRef = useRef(false);
+
+  // Config TURN prête avant le premier appel (entrant ou sortant)
+  useEffect(() => { if (socket) prefetchIceConfig(); }, [socket]);
 
   useEffect(() => {
     if (!socket) return;
