@@ -517,7 +517,7 @@ function VoiceStage({ channel, voice, userById, currentUserId }: {
           <>
             <div className="flex flex-wrap gap-5 justify-center">
               {tiles.map((t) => {
-                const u: Partial<MemberUser> | undefined = t.self ? { id: currentUserId } : userById[t.userId];
+                const u: Partial<MemberUser> | undefined = t.self ? (userById[currentUserId ?? ""] ?? { id: currentUserId }) : userById[t.userId];
                 return (
                   <div key={t.userId} className="flex flex-col items-center gap-2">
                     <div className="relative w-24 h-24 rounded-2xl flex items-center justify-center transition-all duration-150"

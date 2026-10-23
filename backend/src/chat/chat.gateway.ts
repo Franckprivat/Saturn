@@ -17,6 +17,7 @@ import {
 } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { auth } from '../auth/better-auth.instance';
+import { getLiveKitConfig, removeFromVoiceRoom } from '../voice/livekit';
 
 interface AuthedSocket extends Socket {
   user?: { id: string; email: string };
@@ -24,6 +25,8 @@ interface AuthedSocket extends Socket {
 
 interface SocketData {
   user?: { id: string; email: string };
+  /** Salon vocal où se trouve ce socket (affichage « qui est en vocal ») */
+  voice?: { channelId: string; communityId: string };
 }
 
 /** Utilisateur d'un socket, y compris ceux renvoyés par fetchSockets(). */
@@ -44,28 +47,32 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   server: Server;
 
   private readonly logger = new Logger(ChatGateway.name);
-  // Salons vocaux : channelId -> { communityId, peers: socketId -> userId }
-  private voiceRooms = new Map<
-    string,
-    { communityId: string; peers: Map<string, string> }
-  >();
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly messagesService: MessagesService,
   ) {}
 
+  /**
+   * Qui est dans un salon vocal : déduit des sockets de la salle voice:<id>,
+   * donc valable sur toutes les instances du backend (adaptateur Redis).
+   * L'audio lui-même passe par LiveKit.
+   */
+  private async voiceUsers(channelId: string): Promise<string[]> {
+    const sockets = await this.server.in(`voice:${channelId}`).fetchSockets();
+    return Array.from(
+      new Set(
+        sockets.map((s) => socketUserId(s)).filter((id): id is string => !!id),
+      ),
+    );
+  }
+
   /** L'état vocal n'est diffusé qu'aux membres de la communauté (room community:<id>). */
-  private broadcastVoiceState(channelId: string, communityId: string) {
-    const room = this.voiceRooms.get(channelId);
-    const users = room ? Array.from(new Set(room.peers.values())) : [];
+  private async broadcastVoiceState(channelId: string, communityId: string) {
+    const users = await this.voiceUsers(channelId);
     this.server
       .to(`community:${communityId}`)
       .emit('voice_state', { channelId, users });
-  }
-
-  private leaveAllVoiceRooms(client: AuthedSocket) {
-    this.leaveVoiceRoomsWhere(() => true, client.id);
   }
 
   private async ensureCommunityMember(communityId: string, userId: string) {
@@ -100,25 +107,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  /** Retire un voix-participant de tous les salons vocaux (déconnexion, exclusion). */
-  private leaveVoiceRoomsWhere(
-    predicate: (channelId: string, communityId: string) => boolean,
-    socketId: string,
-  ) {
-    for (const [channelId, room] of this.voiceRooms.entries()) {
-      if (!predicate(channelId, room.communityId) || !room.peers.has(socketId))
-        continue;
-      const userId = room.peers.get(socketId);
-      room.peers.delete(socketId);
-      this.server
-        .to(`voice:${channelId}`)
-        .emit('voice_peer_left', { channelId, socketId, userId });
-      this.server.in(socketId).socketsLeave(`voice:${channelId}`);
-      if (room.peers.size === 0) this.voiceRooms.delete(channelId);
-      this.broadcastVoiceState(channelId, room.communityId);
-    }
-  }
-
   /** Un membre retiré d'une conversation ne doit plus recevoir ses évènements. */
   evictFromConversation(userId: string, conversationId: string) {
     this.server.in(`user:${userId}`).socketsLeave(conversationId);
@@ -139,11 +127,23 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       `community:${communityId}`,
       ...channels.map((c) => c.conversationId!),
     ];
-    const sockets = await this.server.in(`user:${userId}`).fetchSockets();
-    for (const s of sockets) {
-      this.leaveVoiceRoomsWhere((_, cid) => cid === communityId, s.id);
+    const voiceChannels = await this.prisma.channel.findMany({
+      where: { communityId, type: 'VOICE' },
+      select: { id: true },
+    });
+    this.server
+      .in(`user:${userId}`)
+      .socketsLeave([...rooms, ...voiceChannels.map((c) => `voice:${c.id}`)]);
+    const config = getLiveKitConfig();
+    for (const { id } of voiceChannels) {
+      void this.broadcastVoiceState(id, communityId);
+      // Coupe aussi l'audio en cours (sinon il resterait connecté à LiveKit)
+      if (config) {
+        removeFromVoiceRoom(config, id, userId).catch(() => {
+          /* pas dans ce salon */
+        });
+      }
     }
-    this.server.in(`user:${userId}`).socketsLeave(rooms);
   }
 
   /**
@@ -245,7 +245,13 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   async handleDisconnect(client: AuthedSocket) {
     if (!client.user) return;
-    this.leaveAllVoiceRooms(client);
+    // Le socket a déjà quitté la salle voice:<id> : on annonce le nouvel état
+    const voice = (client.data as SocketData).voice;
+    if (voice) {
+      void this.broadcastVoiceState(voice.channelId, voice.communityId).catch(
+        () => {},
+      );
+    }
     const userId = client.user.id;
     // Le socket a déjà quitté ses salles : il reste les autres onglets/appareils
     if (!(await this.isUserOnline(userId).catch(() => false))) {
@@ -662,16 +668,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     await client.join(`community:${data.communityId}`);
 
     // État vocal actuel de la communauté (pour l'affichage initial de la sidebar)
+    const voiceChannels = await this.prisma.channel.findMany({
+      where: { communityId: data.communityId, type: 'VOICE' },
+      select: { id: true },
+    });
     const voiceStates: Record<string, string[]> = {};
-    for (const [channelId, room] of this.voiceRooms.entries()) {
-      if (room.communityId === data.communityId) {
-        voiceStates[channelId] = Array.from(new Set(room.peers.values()));
-      }
+    for (const { id } of voiceChannels) {
+      const users = await this.voiceUsers(id);
+      if (users.length) voiceStates[id] = users;
     }
     return { ok: true, voiceStates };
   }
 
-  // ── Salons vocaux (mesh WebRTC) ─────────────────────────────────────────────
+  // ── Salons vocaux ───────────────────────────────────────────────────────────
+  // L'audio passe par LiveKit (jeton : POST /voice/:channelId/token). Le socket
+  // annonce seulement l'entrée et la sortie, pour la liste « en vocal ».
 
   @SubscribeMessage('voice_join')
   async handleVoiceJoin(
@@ -682,93 +693,38 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     // Le salon doit exister, être vocal, et l'utilisateur membre de sa communauté
     const channel = await this.prisma.channel.findUnique({
-      where: { id: data.channelId },
+      where: { id: data?.channelId },
       select: { communityId: true, type: true },
     });
     if (!channel || channel.type !== 'VOICE')
       throw new NotFoundException('Salon vocal introuvable');
     await this.ensureCommunityMember(channel.communityId, client.user.id);
 
-    const roomKey = `voice:${data.channelId}`;
-    await client.join(roomKey);
-    let room = this.voiceRooms.get(data.channelId);
-    if (!room) {
-      room = { communityId: channel.communityId, peers: new Map() };
-      this.voiceRooms.set(data.channelId, room);
+    const socketData = client.data as SocketData;
+    const previous = socketData.voice;
+    if (previous && previous.channelId !== data.channelId) {
+      await client.leave(`voice:${previous.channelId}`);
+      void this.broadcastVoiceState(previous.channelId, previous.communityId);
     }
-
-    // Pairs déjà présents (à qui le nouvel arrivant va envoyer une offre)
-    const existingPeers = Array.from(room.peers.entries()).map(
-      ([socketId, userId]) => ({ socketId, userId }),
-    );
-    room.peers.set(client.id, client.user.id);
-
-    client.emit('voice_existing_peers', {
+    await client.join(`voice:${data.channelId}`);
+    socketData.voice = {
       channelId: data.channelId,
-      peers: existingPeers,
-    });
-    client.to(roomKey).emit('voice_peer_joined', {
-      channelId: data.channelId,
-      socketId: client.id,
-      userId: client.user.id,
-    });
-    this.broadcastVoiceState(data.channelId, channel.communityId);
+      communityId: channel.communityId,
+    };
+    await this.broadcastVoiceState(data.channelId, channel.communityId);
     return { ok: true };
   }
 
   @SubscribeMessage('voice_leave')
-  handleVoiceLeave(
+  async handleVoiceLeave(
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() data: { channelId: string },
   ) {
-    if (!client.user) return;
-    const room = this.voiceRooms.get(data.channelId);
-    if (room?.peers.has(client.id)) {
-      room.peers.delete(client.id);
-      void client.leave(`voice:${data.channelId}`);
-      client.to(`voice:${data.channelId}`).emit('voice_peer_left', {
-        channelId: data.channelId,
-        socketId: client.id,
-        userId: client.user.id,
-      });
-      if (room.peers.size === 0) this.voiceRooms.delete(data.channelId);
-      this.broadcastVoiceState(data.channelId, room.communityId);
-    }
-  }
-
-  @SubscribeMessage('voice_signal')
-  handleVoiceSignal(
-    @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() data: { targetSocketId: string; signal: unknown },
-  ) {
-    if (!client.user) return;
-    // Signalisation uniquement entre pairs d'un même salon vocal
-    const sharesRoom = Array.from(this.voiceRooms.values()).some(
-      (room) =>
-        room.peers.has(client.id) && room.peers.has(data?.targetSocketId),
-    );
-    if (!sharesRoom) return;
-    this.server.to(data.targetSocketId).emit('voice_signal', {
-      fromSocketId: client.id,
-      fromUserId: client.user.id,
-      signal: data.signal,
-    });
-  }
-
-  @SubscribeMessage('voice_mute')
-  handleVoiceMute(
-    @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() data: { channelId: string; muted: boolean },
-  ) {
-    if (
-      !client.user ||
-      !this.voiceRooms.get(data?.channelId)?.peers.has(client.id)
-    )
-      return;
-    client.to(`voice:${data.channelId}`).emit('voice_peer_mute', {
-      socketId: client.id,
-      userId: client.user.id,
-      muted: data.muted,
-    });
+    const socketData = client.data as SocketData;
+    const voice = socketData.voice;
+    if (!client.user || !voice || voice.channelId !== data?.channelId) return;
+    await client.leave(`voice:${voice.channelId}`);
+    socketData.voice = undefined;
+    await this.broadcastVoiceState(voice.channelId, voice.communityId);
   }
 }

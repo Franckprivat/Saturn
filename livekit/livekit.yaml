@@ -1,0 +1,11 @@
+# Serveur média LiveKit pour les salons vocaux des communautés.
+# Clé et secret : variable LIVEKIT_KEYS (« clé: secret »), fournie par docker-compose.
+port: 7880            # signalisation (WebSocket), joint via Nginx sur /livekit/
+rtc:
+  tcp_port: 7881      # repli quand l'UDP est bloqué
+  port_range_start: 50000
+  port_range_end: 50100
+  # En production, LIVEKIT_NODE_IP (docker-compose) donne l'IP publique du serveur.
+  use_external_ip: false
+logging:
+  level: warn
