@@ -204,7 +204,7 @@ npm run dev                      # http://localhost:3000
 
 ### Demo account
 
-To try Saturn without signing up, click **"Try the demo account"** on the landing or login page.
+To try Saturn without signing up, click **"Essayer le compte démo"** (Try the demo account) on the landing or login page.
 
 | Email | Password |
 |---|---|
