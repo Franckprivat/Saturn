@@ -1,53 +1,31 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Palette Saturn, alignée sur le site (frontend-web/app/globals.css) :
+ * papier chaud + argile.
  */
-
-import { Platform } from 'react-native';
-
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
-
 export const Colors = {
-  light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
-  },
-  dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
-  },
+  primary: '#C96442',
+  secondary: '#DA8A6A',
+  primarySoft: 'rgba(201, 100, 66, 0.12)',
+  bg: '#F5F4EE',
+  sidebar: '#EFEDE4',
+  surface: '#FBFAF7',
+  hover: '#EDEBE2',
+  active: '#E4E1D6',
+  border: 'rgba(60, 52, 40, 0.10)',
+  border2: 'rgba(60, 52, 40, 0.16)',
+  text: '#2B2A27',
+  muted: '#6B655C',
+  faint: '#9C968B',
+  success: '#10B981',
+  error: '#EF4444',
+  online: '#10B981',
+  offline: '#94A3B8',
+  white: '#FFFFFF',
+  /** Bulle des messages envoyés */
+  bubbleMine: '#C96442',
+  bubbleOther: '#FFFFFF',
 };
 
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-    serif: "Georgia, 'Times New Roman', serif",
-    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
-    mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-  },
-});
+export const Radius = { sm: 8, md: 12, lg: 16, xl: 24, full: 999 };
+
+export const Spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24 };

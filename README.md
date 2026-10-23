@@ -128,6 +128,7 @@ Saturn/
 │   ├── app/          # Pages: chat, communities, friends, calls, profile, auth
 │   ├── components/   # AppShell, Avatar, modals, AuthLayout, …
 │   └── store/        # Zustand stores (chat, theme)
+├── frontend-mobile/  # Expo (React Native) app for iOS / Android
 ├── nginx/            # Reverse-proxy config
 └── docker-compose.yml
 ```
@@ -201,6 +202,17 @@ npm run dev                      # http://localhost:3000
 | `DATABASE_URL` host | `db:5432` | `localhost:5433` |
 | `BETTER_AUTH_URL` | `http://localhost` (Nginx) | `http://localhost:3001` |
 | Browser → backend | `http://localhost/api` via Nginx | `http://localhost:3001` direct |
+
+### Mobile app (Expo)
+
+```bash
+cd frontend-mobile
+npm install
+npm start          # scan the QR code with Expo Go (same Wi-Fi as the backend)
+```
+
+By default the app targets port 3001 of the machine running Expo. See
+[`frontend-mobile/README.md`](frontend-mobile/README.md) for screens and configuration.
 
 ### Demo account
 
