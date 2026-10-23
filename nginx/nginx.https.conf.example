@@ -18,7 +18,9 @@ events {
 }
 
 http {
-  upstream backend  { server backend:3000; }
+  # ip_hash : un navigateur reste sur la même instance du backend
+  # (Socket.IO commence en long polling, qui exige cette affinité)
+  upstream backend  { ip_hash; server backend:3000; }
   upstream frontend { server frontend-web:3000; }
 
   # Journal d'accès en JSON (exploitable par un collecteur de logs)

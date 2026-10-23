@@ -44,7 +44,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   server: Server;
 
   private readonly logger = new Logger(ChatGateway.name);
-  private onlineUsers = new Map<string, number>();
   // Salons vocaux : channelId -> { communityId, peers: socketId -> userId }
   private voiceRooms = new Map<
     string,
@@ -180,6 +179,26 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return Array.from(ids).filter((id) => !blocked.has(id));
   }
 
+  /**
+   * Présence calculée à partir des sockets réellement connectés (salle
+   * user:<id>) : avec l'adaptateur Redis, la réponse couvre toutes les
+   * instances du backend, pas seulement celle-ci.
+   */
+  private async onlineAmong(userIds: string[]): Promise<Set<string>> {
+    if (!userIds.length) return new Set();
+    const sockets = await this.server
+      .in(userIds.map((id) => `user:${id}`))
+      .fetchSockets();
+    return new Set(
+      sockets.map((s) => socketUserId(s)).filter((id): id is string => !!id),
+    );
+  }
+
+  private async isUserOnline(userId: string) {
+    const sockets = await this.server.in(`user:${userId}`).fetchSockets();
+    return sockets.length > 0;
+  }
+
   async handleConnection(client: AuthedSocket) {
     try {
       const cookieHeader = client.handshake.headers.cookie || '';
@@ -194,20 +213,21 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       client.user = { id: session.user.id, email: session.user.email };
       // Aussi dans socket.data : seule propriété garantie sur les sockets de fetchSockets()
       (client.data as SocketData).user = client.user;
+      // Déjà connecté ailleurs (autre onglet, autre appareil) ?
+      const wasOnline = await this.isUserOnline(session.user.id);
       // Salle personnelle pour les notifications ciblées
       await client.join(`user:${session.user.id}`);
-      const prev = this.onlineUsers.get(session.user.id) ?? 0;
-      this.onlineUsers.set(session.user.id, prev + 1);
       // Présence partagée uniquement avec les contacts (amis, conversations,
       // communautés communes), pas avec tous les comptes connectés.
       const audience = await this.presenceAudience(session.user.id);
-      if (prev === 0 && audience.length) {
+      if (!wasOnline && audience.length) {
         this.server
           .to(audience.map((id) => `user:${id}`))
           .emit('user_online', { userId: session.user.id });
       }
+      const online = await this.onlineAmong(audience);
       client.emit('online_users', {
-        userIds: audience.filter((id) => this.onlineUsers.has(id)),
+        userIds: audience.filter((id) => online.has(id)),
       });
       // Plancher de « vu à… » dès la connexion : si le serveur meurt brutalement
       // (pas de handleDisconnect), le dernier passage reste au moins daté d'ici.
@@ -227,9 +247,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (!client.user) return;
     this.leaveAllVoiceRooms(client);
     const userId = client.user.id;
-    const count = (this.onlineUsers.get(userId) ?? 1) - 1;
-    if (count <= 0) {
-      this.onlineUsers.delete(userId);
+    // Le socket a déjà quitté ses salles : il reste les autres onglets/appareils
+    if (!(await this.isUserOnline(userId).catch(() => false))) {
       const lastSeenAt = new Date();
       // Persistance « vu à… » (fire-and-forget : la déconnexion ne doit pas bloquer)
       this.prisma.user
@@ -237,7 +256,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         .catch(() => {});
       const audience = await this.presenceAudience(userId).catch(() => []);
       // Reconnecté entre-temps (rechargement de page) : ne pas l'annoncer hors ligne
-      if (audience.length && !this.onlineUsers.has(userId)) {
+      if (
+        audience.length &&
+        !(await this.isUserOnline(userId).catch(() => false))
+      ) {
         this.server
           .to(audience.map((id) => `user:${id}`))
           .emit('user_offline', {
@@ -245,8 +267,6 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
             lastSeenAt: lastSeenAt.toISOString(),
           });
       }
-    } else {
-      this.onlineUsers.set(userId, count);
     }
   }
 

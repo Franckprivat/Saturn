@@ -1,6 +1,7 @@
 import 'dotenv/config'; // doit être en premier — charge backend/.env avant tout
 import { NestFactory } from '@nestjs/core';
 import { ExpressAdapter } from '@nestjs/platform-express';
+import { RedisIoAdapter } from './redis-io.adapter';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import helmet from 'helmet';
@@ -98,6 +99,13 @@ async function bootstrap() {
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
   });
+
+  // Plusieurs instances du backend : Socket.IO passe par Redis
+  if (process.env.REDIS_URL) {
+    const redisAdapter = new RedisIoAdapter(app);
+    await redisAdapter.connectToRedis(process.env.REDIS_URL);
+    app.useWebSocketAdapter(redisAdapter);
+  }
 
   await app.listen(process.env.PORT ?? 3001);
 }
