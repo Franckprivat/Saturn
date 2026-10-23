@@ -1,0 +1,83 @@
+# Nginx en HTTPS — à utiliser en production avec un nom de domaine.
+#
+# 1. Remplace saturn.example.com par ton domaine (3 occurrences).
+# 2. Obtiens un certificat Let's Encrypt, par exemple :
+#      docker run --rm -p 80:80 -v ./certs:/etc/letsencrypt certbot/certbot \
+#        certonly --standalone -d saturn.example.com
+# 3. Copie ce fichier en nginx/nginx.https.conf, puis dans docker-compose.yml
+#    pour le service nginx : publie "443:443", monte ./certs:/etc/letsencrypt:ro
+#    et ./nginx/nginx.https.conf:/etc/nginx/nginx.conf:ro
+# 4. Dans .env : PUBLIC_URL=https://saturn.example.com et
+#    ALLOWED_ORIGINS=https://saturn.example.com, puis `docker compose up -d --build`.
+#
+# HTTPS est indispensable en production : cookies Secure, caméra et micro
+# (WebRTC n'est autorisé qu'en contexte sécurisé hors localhost).
+
+events {
+  worker_connections 1024;
+}
+
+http {
+  upstream backend  { server backend:3000; }
+  upstream frontend { server frontend-web:3000; }
+
+  # Journal d'accès en JSON (exploitable par un collecteur de logs)
+  log_format json escape=json '{"time":"$time_iso8601","ip":"$remote_addr",'
+    '"method":"$request_method","uri":"$request_uri","status":$status,'
+    '"bytes":$body_bytes_sent,"duration":$request_time,"ua":"$http_user_agent"}';
+  access_log /var/log/nginx/access.log json;
+
+  # HTTP → HTTPS
+  server {
+    listen 80;
+    server_name saturn.example.com;
+    location / { return 301 https://$host$request_uri; }
+  }
+
+  server {
+    listen 443 ssl;
+    http2 on;
+    server_name saturn.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/saturn.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/saturn.example.com/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_cache   shared:SSL:10m;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    client_max_body_size 60m;
+
+    proxy_http_version 1.1;
+    proxy_set_header   Host              $host;
+    proxy_set_header   X-Real-IP         $remote_addr;
+    proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header   X-Forwarded-Proto $scheme;
+
+    location /uploads/ {
+      proxy_pass http://backend/uploads/;
+    }
+
+    # better-auth répond sur son basePath /api/auth (chemin conservé)
+    location /api/auth/ {
+      proxy_pass http://backend;
+    }
+
+    location /api/ {
+      rewrite    ^/api/(.*)$ /$1 break;
+      proxy_pass http://backend;
+    }
+
+    location /socket.io/ {
+      proxy_pass         http://backend/socket.io/;
+      proxy_set_header   Upgrade    $http_upgrade;
+      proxy_set_header   Connection "upgrade";
+      proxy_read_timeout 1h;
+    }
+
+    location / {
+      proxy_pass       http://frontend;
+      proxy_set_header Upgrade    $http_upgrade;
+      proxy_set_header Connection "upgrade";
+    }
+  }
+}

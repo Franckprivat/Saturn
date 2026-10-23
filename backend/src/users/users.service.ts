@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 function validateImageUrl(url: string | null | undefined): string | null {
   if (url === null || url === undefined || url === '') return null;
@@ -17,6 +18,30 @@ function validateImageUrl(url: string | null | undefined): string | null {
     );
   }
   return trimmed;
+}
+
+/** Liens sociaux : quelques entrées, en http(s) uniquement (sinon `javascript:` cliquable). */
+function validateSocialLinks(links: unknown): Record<string, string> {
+  if (!links || typeof links !== 'object' || Array.isArray(links)) {
+    throw new BadRequestException('Liens sociaux invalides');
+  }
+  const entries = Object.entries(links as Record<string, unknown>);
+  if (entries.length > 10)
+    throw new BadRequestException('10 liens sociaux maximum');
+  const clean: Record<string, string> = {};
+  for (const [key, value] of entries) {
+    if (!/^[a-z0-9_-]{1,30}$/i.test(key))
+      throw new BadRequestException('Lien social invalide');
+    const url = typeof value === 'string' ? value.trim() : '';
+    if (!url) continue;
+    if (url.length > 300 || !/^https?:\/\//i.test(url)) {
+      throw new BadRequestException(
+        'Les liens sociaux doivent commencer par http(s)://',
+      );
+    }
+    clean[key] = url;
+  }
+  return clean;
 }
 
 @Injectable()
@@ -60,35 +85,49 @@ export class UsersService {
     });
   }
 
-  updateUser(
-    id: string,
-    data: {
+  async updateUser(id: string, data: UpdateProfileDto) {
+    // Liste blanche explicite : le corps de la requête n'est jamais passé tel quel
+    // à Prisma (sinon email, emailVerified, id… seraient modifiables).
+    const update: {
       nickname?: string;
       bio?: string;
       socialLinks?: Record<string, string>;
-      avatarColor?: string;
+      avatarColor?: string | null;
       image?: string | null;
       chatWallpaper?: string | null;
-    },
-  ) {
-    // Sanitiser les champs texte
-    const nickname = data.nickname?.trim().slice(0, 50) || undefined;
-    const bio = data.bio?.trim().slice(0, 300) || undefined;
-    const image = 'image' in data ? validateImageUrl(data.image) : undefined;
+    } = {};
+    if (typeof data.nickname === 'string' && data.nickname.trim()) {
+      update.nickname = data.nickname.trim().slice(0, 50);
+    }
+    if (typeof data.bio === 'string')
+      update.bio = data.bio.trim().slice(0, 300);
+    if (data.socialLinks !== undefined)
+      update.socialLinks = validateSocialLinks(data.socialLinks);
+    if (data.avatarColor !== undefined) {
+      const color = data.avatarColor;
+      if (color === null || color === '') update.avatarColor = null;
+      else if (
+        typeof color === 'string' &&
+        /^[\w\s#[\]/:.-]{1,100}$/.test(color)
+      )
+        update.avatarColor = color;
+      else throw new BadRequestException("Couleur d'avatar invalide");
+    }
+    if (data.image !== undefined) update.image = validateImageUrl(data.image);
     // Fond d'écran : soit un preset (`preset:<slug>`), soit une image uploadée (`url:<https://...>`)
-    let chatWallpaper: string | null | undefined = undefined;
-    if ('chatWallpaper' in data) {
+    if (data.chatWallpaper !== undefined) {
       const w = data.chatWallpaper;
-      if (w === null || w === '') chatWallpaper = null;
-      else if (/^preset:[a-z0-9-]{1,50}$/i.test(w!)) chatWallpaper = w;
-      else if (w!.startsWith('url:'))
-        chatWallpaper = `url:${validateImageUrl(w!.slice(4))}`;
+      if (w === null || w === '') update.chatWallpaper = null;
+      else if (typeof w === 'string' && /^preset:[a-z0-9-]{1,50}$/i.test(w))
+        update.chatWallpaper = w;
+      else if (typeof w === 'string' && w.startsWith('url:'))
+        update.chatWallpaper = `url:${validateImageUrl(w.slice(4))}`;
       else throw new BadRequestException("Fond d'écran invalide");
     }
 
     return this.prisma.user.update({
       where: { id },
-      data: { ...data, nickname, bio, image, chatWallpaper },
+      data: update,
       select: {
         id: true,
         email: true,

@@ -80,7 +80,7 @@ export function CreateGroupModal({ friends, onClose, onCreated }: CreateGroupMod
               {step === 1 ? 'Choisis un nom et une photo' : `${selected.length} membre(s) sélectionné(s)`}
             </p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center transition"
+          <button aria-label="Fermer" onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center transition"
             style={{ color: 'var(--sat-muted)' }}
             onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--sat-hover)')}
             onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>✕</button>
@@ -90,7 +90,7 @@ export function CreateGroupModal({ friends, onClose, onCreated }: CreateGroupMod
           <div className="p-5 space-y-4">
             {/* Photo + nom */}
             <div className="flex items-center gap-4">
-              <button onClick={() => fileRef.current?.click()}
+              <button aria-label="Choisir la photo du groupe" onClick={() => fileRef.current?.click()}
                 className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden flex-shrink-0 transition relative group"
                 style={{ background: image ? 'transparent' : 'var(--sat-hover)', border: '2px dashed var(--sat-border-2)' }}>
                 {image

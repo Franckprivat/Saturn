@@ -2,13 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
+import { currentIceConfig, prefetchIceConfig } from '@/lib/iceServers';
 
-const ICE_CONFIG: RTCConfiguration = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-  ],
-};
 
 const SPEAKING_THRESHOLD = 0.045; // niveau RMS au-delà duquel on considère que ça parle
 
@@ -113,7 +108,7 @@ export function useVoiceChannel(socket: Socket | null) {
 
   const createPeer = useCallback((socketId: string, userId: string, initiator: boolean) => {
     if (!socket) return null;
-    const pc = new RTCPeerConnection(ICE_CONFIG);
+    const pc = new RTCPeerConnection(currentIceConfig());
     pcsRef.current.set(socketId, pc);
 
     localStreamRef.current?.getTracks().forEach((t) => pc.addTrack(t, localStreamRef.current!));
@@ -221,6 +216,8 @@ export function useVoiceChannel(socket: Socket | null) {
       return next;
     });
   }, [socket]);
+
+  useEffect(() => { prefetchIceConfig(); }, []);
 
   useEffect(() => {
     if (!socket) return;

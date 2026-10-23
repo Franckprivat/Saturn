@@ -25,13 +25,40 @@ const MEMBER_SELECT = {
   user: {
     select: {
       id: true,
-      email: true,
       nickname: true,
       image: true,
       avatarColor: true,
     },
   },
 } as const;
+
+function requireName(value: unknown, message: string, max: number): string {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) throw new BadRequestException(message);
+  if (text.length > max)
+    throw new BadRequestException(`${max} caractères maximum`);
+  return text;
+}
+
+function optionalText(value: unknown, max: number): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string')
+    throw new BadRequestException('Texte invalide');
+  return value.trim().slice(0, max) || null;
+}
+
+/** Image : upload interne ou URL http(s). */
+function validateImage(url: unknown): string | null {
+  if (url === null || url === undefined || url === '') return null;
+  const text = typeof url === 'string' ? url.trim() : '';
+  if (
+    text.length <= 2048 &&
+    (/^\/uploads\/[\w.-]+$/.test(text) || /^https?:\/\//i.test(text))
+  ) {
+    return text;
+  }
+  throw new BadRequestException('URL image invalide');
+}
 
 @Injectable()
 export class CommunitiesService {
@@ -51,6 +78,19 @@ export class CommunitiesService {
         'Vous ne faites pas partie de cette communauté',
       );
     return m;
+  }
+
+  private async ensureCategoryInCommunity(
+    communityId: string,
+    categoryId: string,
+  ) {
+    const category = await this.prisma.channelCategory.findUnique({
+      where: { id: categoryId },
+      select: { communityId: true },
+    });
+    if (!category || category.communityId !== communityId) {
+      throw new NotFoundException('Catégorie introuvable');
+    }
   }
 
   private async requireRole(communityId: string, userId: string, min: Role) {
@@ -86,13 +126,13 @@ export class CommunitiesService {
     description?: string,
     image?: string,
   ) {
-    if (!name?.trim()) throw new BadRequestException('Nom requis');
+    const cleanName = requireName(name, 'Nom requis', 100);
 
     const community = await this.prisma.community.create({
       data: {
-        name: name.trim(),
-        description: description?.trim() || null,
-        image: image || null,
+        name: cleanName,
+        description: optionalText(description, 1000),
+        image: validateImage(image),
         ownerId: userId,
         inviteToken: randomBytes(8).toString('hex'),
         members: { create: { userId, role: 'OWNER' } },
@@ -163,11 +203,15 @@ export class CommunitiesService {
     await this.prisma.community.update({
       where: { id: communityId },
       data: {
-        ...(data.name !== undefined ? { name: data.name.trim() } : {}),
-        ...(data.description !== undefined
-          ? { description: data.description }
+        ...(data.name !== undefined
+          ? { name: requireName(data.name, 'Nom requis', 100) }
           : {}),
-        ...(data.image !== undefined ? { image: data.image } : {}),
+        ...(data.description !== undefined
+          ? { description: optionalText(data.description, 1000) }
+          : {}),
+        ...(data.image !== undefined
+          ? { image: validateImage(data.image) }
+          : {}),
       },
     });
     return this.getCommunityDetail(communityId, userId);
@@ -190,6 +234,9 @@ export class CommunitiesService {
       });
     }
     await this.prisma.community.delete({ where: { id: communityId } });
+    for (const convId of convIds)
+      this.chatGateway.closeConversationRoom(convId);
+    this.chatGateway.closeConversationRoom(`community:${communityId}`);
     if (convIds.length) {
       await this.prisma.conversation.deleteMany({
         where: { id: { in: convIds } },
@@ -208,7 +255,7 @@ export class CommunitiesService {
     await this.prisma.channelCategory.create({
       data: {
         communityId,
-        name: name.trim() || 'Nouvelle catégorie',
+        name: optionalText(name, 100) || 'Nouvelle catégorie',
         position: count,
       },
     });
@@ -221,8 +268,10 @@ export class CommunitiesService {
     categoryId: string,
   ) {
     await this.requireRole(communityId, userId, 'ADMIN');
+    // La catégorie doit appartenir à cette communauté (sinon IDOR inter-communautés)
+    await this.ensureCategoryInCommunity(communityId, categoryId);
     await this.prisma.channel.updateMany({
-      where: { categoryId },
+      where: { categoryId, communityId },
       data: { categoryId: null },
     });
     await this.prisma.channelCategory.delete({ where: { id: categoryId } });
@@ -239,13 +288,19 @@ export class CommunitiesService {
     categoryId?: string,
   ) {
     await this.requireRole(communityId, userId, 'MODERATOR');
+    if (type !== 'TEXT' && type !== 'VOICE') {
+      throw new BadRequestException('Type de salon invalide');
+    }
+    if (categoryId)
+      await this.ensureCategoryInCommunity(communityId, categoryId);
+    name = optionalText(name, 100) || 'nouveau-salon';
     const count = await this.prisma.channel.count({
       where: { communityId, categoryId: categoryId ?? null },
     });
     let conversationId: string | undefined;
     if (type === 'TEXT') {
       const conv = await this.prisma.conversation.create({
-        data: { type: 'CHANNEL', name: name.trim(), communityId },
+        data: { type: 'CHANNEL', name, communityId },
       });
       conversationId = conv.id;
     }
@@ -253,7 +308,7 @@ export class CommunitiesService {
       data: {
         communityId,
         categoryId: categoryId ?? null,
-        name: name.trim() || 'nouveau-salon',
+        name,
         type,
         position: count,
         conversationId,
@@ -269,6 +324,7 @@ export class CommunitiesService {
     name: string,
   ) {
     await this.requireRole(communityId, userId, 'MODERATOR');
+    name = requireName(name, 'Nom du salon requis', 100);
     const channel = await this.prisma.channel.findUnique({
       where: { id: channelId },
     });
@@ -296,6 +352,7 @@ export class CommunitiesService {
       throw new NotFoundException('Salon introuvable');
     await this.prisma.channel.delete({ where: { id: channelId } });
     if (channel.conversationId) {
+      this.chatGateway.closeConversationRoom(channel.conversationId);
       await this.prisma.message.deleteMany({
         where: { conversationId: channel.conversationId },
       });
@@ -315,6 +372,9 @@ export class CommunitiesService {
     role: Role,
   ) {
     const me = await this.requireRole(communityId, userId, 'ADMIN');
+    if (!['ADMIN', 'MODERATOR', 'MEMBER', 'OWNER'].includes(role)) {
+      throw new BadRequestException('Rôle invalide');
+    }
     if (role === 'OWNER')
       throw new BadRequestException(
         "Impossible d'attribuer le rôle propriétaire",
@@ -343,6 +403,7 @@ export class CommunitiesService {
     await this.prisma.communityMember.delete({
       where: { communityId_userId: { communityId, userId: targetUserId } },
     });
+    await this.chatGateway.evictFromCommunity(targetUserId, communityId);
     return { ok: true };
   }
 
@@ -355,24 +416,8 @@ export class CommunitiesService {
     await this.prisma.communityMember.delete({
       where: { communityId_userId: { communityId, userId } },
     });
+    await this.chatGateway.evictFromCommunity(userId, communityId);
     return { ok: true };
-  }
-
-  async addMemberDirectly(
-    communityId: string,
-    actorId: string,
-    targetUserId: string,
-  ) {
-    await this.requireRole(communityId, actorId, 'ADMIN');
-    const existing = await this.prisma.communityMember.findUnique({
-      where: { communityId_userId: { communityId, userId: targetUserId } },
-    });
-    if (existing)
-      throw new BadRequestException('Cet utilisateur est déjà membre');
-    await this.prisma.communityMember.create({
-      data: { communityId, userId: targetUserId, role: 'MEMBER' },
-    });
-    return this.getCommunityDetail(communityId, actorId);
   }
 
   // ── Invitations ──────────────────────────────────────────────────────────
@@ -427,37 +472,5 @@ export class CommunitiesService {
     });
 
     return { ok: true };
-  }
-
-  async getInvite(communityId: string, userId: string) {
-    await this.getMembership(communityId, userId);
-    let community = await this.prisma.community.findUnique({
-      where: { id: communityId },
-    });
-    if (!community) throw new NotFoundException();
-    if (!community.inviteToken) {
-      community = await this.prisma.community.update({
-        where: { id: communityId },
-        data: { inviteToken: randomBytes(8).toString('hex') },
-      });
-    }
-    return { token: community.inviteToken };
-  }
-
-  async joinByInvite(token: string, userId: string) {
-    const community = await this.prisma.community.findUnique({
-      where: { inviteToken: token },
-    });
-    if (!community)
-      throw new NotFoundException('Invitation invalide ou expirée');
-    const existing = await this.prisma.communityMember.findUnique({
-      where: { communityId_userId: { communityId: community.id, userId } },
-    });
-    if (!existing) {
-      await this.prisma.communityMember.create({
-        data: { communityId: community.id, userId, role: 'MEMBER' },
-      });
-    }
-    return { id: community.id, name: community.name };
   }
 }

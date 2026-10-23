@@ -1,13 +1,24 @@
-version: "3.9"
+# Stack « production » : frontend compilé, backend joignable uniquement via Nginx.
+# Développement avec hot reload :
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+x-logging: &logging
+  # Logs Docker plafonnés (sinon ils grossissent sans limite sur le disque)
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   db:
     image: postgres:16-alpine
+    logging: *logging
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      # Exposé uniquement en local — retirer en production
+      # Lié à 127.0.0.1 : joignable depuis la machine hôte seulement
       - "127.0.0.1:5433:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
@@ -19,12 +30,16 @@ services:
 
   backend:
     build: ./backend
-    ports:
-      - "3001:3000"
+    logging: *logging
+    restart: unless-stopped
+    # Pas de port publié : tout passe par Nginx (rate limit basé sur X-Real-IP).
+    # docker-compose.dev.yml le publie sur 127.0.0.1:3001 pour le développement.
     env_file:
       - .env
     environment:
       PORT: "3000"
+      # Le navigateur passe par Nginx : better-auth doit connaître cette origine
+      BETTER_AUTH_URL: ${PUBLIC_URL:-http://localhost}
     volumes:
       # Persistance des fichiers uploadés : sans ce volume, chaque rebuild du
       # conteneur effaçait les images (URLs orphelines en base → images cassées)
@@ -40,30 +55,23 @@ services:
       start_period: 40s
 
   frontend-web:
-    build: ./frontend-web
-    user: root
-    ports:
-      - "3000:3000"
-    env_file:
-      - .env
+    build:
+      context: ./frontend-web
+      target: prod
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_URL:-http://localhost}/api    # axios → Nginx → backend (routes NestJS)
+        NEXT_PUBLIC_AUTH_URL: ${PUBLIC_URL:-http://localhost}       # better-auth → Nginx → /api/auth/*
+        # Socket.IO → Nginx /socket.io/ (sans ça le client prenait "/api" pour un namespace)
+        NEXT_PUBLIC_SOCKET_URL: ${PUBLIC_URL:-http://localhost}
+    logging: *logging
+    restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost/api   # axios → Nginx → backend (routes NestJS)
-      NEXT_PUBLIC_AUTH_URL: http://localhost       # better-auth → Nginx → /auth/* backend
-      WATCHPACK_POLLING: "true"
       PORT: "3000"
-    volumes:
-      # Volume mounts pour le hot reload (dev uniquement)
-      # Rebuild l'image si tu modifies package.json
-      - ./frontend-web:/app
-      - /app/node_modules
-      - /app/.next
     depends_on:
       backend:
         condition: service_healthy
-      db:
-        condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/login"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -72,6 +80,7 @@ services:
   nginx:
     image: nginx:1.27-alpine
     container_name: nginx
+    logging: *logging
     ports:
       - "80:80"
     volumes:
@@ -81,7 +90,7 @@ services:
         condition: service_healthy
       frontend-web:
         condition: service_healthy
-    restart: on-failure
+    restart: unless-stopped
 
 volumes:
   db-data:

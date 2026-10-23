@@ -4,7 +4,6 @@ import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { api } from '@/lib/api';
-import { mediaUrl } from '@/lib/media';
 import { AuthLayout, AuthInput, AuthButton, AuthError } from '@/components/AuthLayout';
 
 // Format Tailwind attendu par <Avatar /> (bg-gradient-to-br ${color})
@@ -29,38 +28,68 @@ export default function SignupPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Aperçu local : la photo n'est envoyée qu'après la création du compte
+  // (l'upload exige une session).
   const [image, setImage] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [checkEmail, setCheckEmail] = useState(false);
   const [color, setColor] = useState(AVATAR_COLORS[0]);
   const [showColors, setShowColors] = useState(false);
 
   const initial = (nickname || firstName || '?').charAt(0).toUpperCase();
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) { setError('Image trop lourde (max 5 Mo).'); return; }
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await api.post('/upload', fd);
-      setImage(res.data.url);
-      setShowColors(false);
-    } catch { setError("Erreur lors de l'upload de la photo."); }
+    if (image) URL.revokeObjectURL(image);
+    setPhoto(file);
+    setImage(URL.createObjectURL(file));
+    setShowColors(false);
+  };
+
+  const removePhoto = () => {
+    if (image) URL.revokeObjectURL(image);
+    setImage(null);
+    setPhoto(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const { error: authError } = await authClient.signUp.email({
+    const { data, error: authError } = await authClient.signUp.email({
       email, password, name: nickname, firstName, lastName, nickname,
     } as Parameters<typeof authClient.signUp.email>[0]); // champs additionnels déclarés côté serveur
     if (authError) { setError(authError.message || "Erreur lors de l'inscription"); setLoading(false); return; }
+    // Vérification d'e-mail activée : pas de session tant que l'adresse n'est pas confirmée
+    if (!data?.token) { setCheckEmail(true); setLoading(false); return; }
+    let uploaded: string | null = null;
+    if (photo) {
+      try {
+        const fd = new FormData();
+        fd.append('file', photo);
+        uploaded = (await api.post('/upload', fd)).data.url;
+      } catch { /* non bloquant : la photo pourra être ajoutée depuis le profil */ }
+    }
     try {
-      await api.patch('/users/me', { image: image || null, avatarColor: image ? null : color });
+      await api.patch('/users/me', { image: uploaded, avatarColor: uploaded ? null : color });
     } catch { /* non bloquant */ }
-    router.push('/');
+    router.push('/chat');
   };
+
+  if (checkEmail) {
+    return (
+      <AuthLayout tagline={['Rejoins la communauté,', "c'est gratuit."]}>
+        <h1 className="text-3xl font-semibold tracking-tight text-[#2B2A27] mb-3">Vérifie ta boîte mail</h1>
+        <p className="text-sm text-[#6B655C]">
+          Ton compte est créé. Clique sur le lien envoyé à <strong>{email}</strong> pour confirmer ton adresse,
+          puis tu pourras te connecter et ajouter ta photo de profil.
+        </p>
+      </AuthLayout>
+    );
+  }
 
   return (
     <AuthLayout tagline={['Rejoins la communauté,', "c'est gratuit."]}>
@@ -77,7 +106,7 @@ export default function SignupPage() {
               type="button" onClick={() => fileRef.current?.click()}
               className={`w-14 h-14 rounded-2xl overflow-hidden flex items-center justify-center text-xl font-black text-white transition-transform hover:scale-105 ${image ? '' : `bg-gradient-to-br ${color}`}`}
             >
-              {image ? <img src={mediaUrl(image)} alt="avatar" className="w-full h-full object-cover" /> : <span className="select-none">{initial}</span>}
+              {image ? <img src={image} alt="avatar" className="w-full h-full object-cover" /> : <span className="select-none">{initial}</span>}
             </button>
             <button
               type="button" onClick={() => fileRef.current?.click()}
@@ -99,7 +128,7 @@ export default function SignupPage() {
               </button>
               {image ? (
                 <><span className="text-[#CBD5E1]">·</span>
-                <button type="button" onClick={() => setImage(null)} className="font-medium text-[#6B655C] hover:text-[#EF4444] transition-colors">Supprimer</button></>
+                <button type="button" onClick={removePhoto} className="font-medium text-[#6B655C] hover:text-[#EF4444] transition-colors">Supprimer</button></>
               ) : (
                 <><span className="text-[#CBD5E1]">·</span>
                 <button type="button" onClick={() => setShowColors((v) => !v)} className="font-medium text-[#6B655C] hover:text-[#C96442] transition-colors">Couleur</button></>

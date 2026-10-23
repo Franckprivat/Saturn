@@ -9,6 +9,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import { useThemeStore, THEMES, ACCENTS, type ThemeName, type AccentColor } from '@/store/themeStore';
 import { PageLoader } from '@/components/Spinner';
 import type { ChatUser } from '@/store/chatStore';
+import { toast } from '@/components/Toast';
+import { apiErrorMessage } from '@/lib/errors';
 
 type Tab = 'profil' | 'liens' | 'parametres';
 
@@ -131,7 +133,8 @@ export default function ProfilePage() {
       });
     }).catch(() => {});
 
-    api.get('/friends').then((res) => setFriends(res.data)).catch(() => {});
+    api.get('/friends').then((res) => setFriends(res.data))
+      .catch((err) => toast(apiErrorMessage(err, 'Chargement des amis impossible'), 'error'));
   }, []);
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -501,7 +504,7 @@ export default function ProfilePage() {
                       />
                     </div>
                     {socialLinks[key] && (
-                      <button
+                      <button aria-label="Effacer ce lien"
                         onClick={() => setSocialLinks((prev) => { const n = { ...prev }; delete n[key]; return n; })}
                         className="text-[var(--sat-faint)] hover:text-[#EF4444] transition text-xs flex-shrink-0"
                       >

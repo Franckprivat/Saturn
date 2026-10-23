@@ -130,7 +130,7 @@ export function EmojiPicker({ onSelect, onClose }: EmojiPickerProps) {
       {/* Grille d'emojis — 10 colonnes, 4 lignes visibles avec scroll */}
       <div className="grid gap-0.5 p-2 overflow-y-auto" style={{ gridTemplateColumns: 'repeat(10, 1fr)', maxHeight: 200 }}>
         {displayed.map((emoji, i) => (
-          <button
+          <button aria-label={emoji}
             key={`${emoji}-${i}`}
             onClick={() => { onSelect(emoji); onClose(); }}
             className="flex items-center justify-center rounded-xl hover:bg-[#F1F5F9] transition aspect-square"

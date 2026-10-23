@@ -11,6 +11,14 @@ import { auth } from './auth/better-auth.instance';
 async function bootstrap() {
   const expressApp = express();
 
+  // Derrière Nginx, req.ip vaut l'IP du conteneur Nginx : sans « trust proxy »,
+  // tous les utilisateurs partagent le même quota du rate limiter.
+  // Par défaut on ne fait confiance qu'aux proxys du réseau local (Docker).
+  expressApp.set(
+    'trust proxy',
+    process.env.TRUST_PROXY ?? 'loopback, linklocal, uniquelocal',
+  );
+
   // ── CORS en tout premier — avant better-auth et body parser ───────────────
   // NestJS app.enableCors() vient trop tard (après better-auth dans la stack)
   const allowedOrigins = process.env.ALLOWED_ORIGINS
@@ -49,11 +57,8 @@ async function bootstrap() {
   );
 
   // ── Better-auth avant NestJS et avant body parser ─────────────────────────
-  //    /auth     → via Nginx (strip /api/ → /auth/...)
-  //    /api/auth → accès direct local (npm run dev)
-  const authHandler = toNodeHandler(auth);
-  expressApp.use('/auth', authHandler);
-  expressApp.use('/api/auth', authHandler);
+  //    /api/auth → en local (npm run dev) comme via Nginx, qui conserve le chemin
+  expressApp.use('/api/auth', toNodeHandler(auth));
 
   // ── Body parser pour les routes NestJS ────────────────────────────────────
   expressApp.use(express.json({ limit: '6mb' }));

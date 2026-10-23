@@ -30,3 +30,6 @@ Thumbs.db
 
 # Fichiers uploadés par les utilisateurs (contenu, pas du code)
 backend/uploads/
+
+# Sauvegardes locales (scripts/backup.sh)
+backups/
