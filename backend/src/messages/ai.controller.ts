@@ -3,6 +3,7 @@ import { Throttle } from '@nestjs/throttler';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSessionUser } from '../auth/get-session-user';
 import type { Request } from 'express';
+import { AiSuggestDto } from './dto/ai-suggest.dto';
 
 @Controller('ai')
 export class AiController {
@@ -22,21 +23,18 @@ export class AiController {
   @Post('suggest')
   // Chaque appel coûte des tokens : quota serré par utilisateur/IP
   @Throttle({ global: { ttl: 60_000, limit: 10 } })
-  async suggest(
-    @Req() req: Request,
-    @Body('messages') messages: { role: string; content: string }[],
-  ) {
+  async suggest(@Req() req: Request, @Body() { messages }: AiSuggestDto) {
     await getSessionUser(req);
 
     if (!this.client) return { suggestions: [] };
 
     try {
       // Entrée client : rôles et longueurs normalisés avant l'appel à l'API
-      const last5 = (Array.isArray(messages) ? messages : [])
+      const last5 = messages
         .slice(-5)
-        .filter((m) => typeof m?.content === 'string' && m.content.trim())
+        .filter((m) => m.content.trim())
         .map((m) => ({
-          role: m.role === 'assistant' ? 'assistant' : 'user',
+          role: m.role,
           content: m.content.slice(0, 1000),
         }));
       if (!last5.length) return { suggestions: [] };
@@ -47,7 +45,7 @@ export class AiController {
 Génère exactement 3 suggestions de réponses au dernier message reçu. Chaque suggestion doit être sur une ligne séparée, sans numérotation, sans guillemets, sans tirets. Maximum 15 mots par suggestion. Réponds en français sauf si la conversation est dans une autre langue.`,
         messages: [
           ...last5.map((m) => ({
-            role: m.role as 'user' | 'assistant',
+            role: m.role,
             content: m.content,
           })),
           {

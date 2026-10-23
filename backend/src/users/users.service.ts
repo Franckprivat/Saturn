@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 function validateImageUrl(url: string | null | undefined): string | null {
   if (url === null || url === undefined || url === '') return null;
@@ -84,17 +85,7 @@ export class UsersService {
     });
   }
 
-  async updateUser(
-    id: string,
-    data: {
-      nickname?: string;
-      bio?: string;
-      socialLinks?: Record<string, string>;
-      avatarColor?: string;
-      image?: string | null;
-      chatWallpaper?: string | null;
-    },
-  ) {
+  async updateUser(id: string, data: UpdateProfileDto) {
     // Liste blanche explicite : le corps de la requête n'est jamais passé tel quel
     // à Prisma (sinon email, emailVerified, id… seraient modifiables).
     const update: {
@@ -110,9 +101,9 @@ export class UsersService {
     }
     if (typeof data.bio === 'string')
       update.bio = data.bio.trim().slice(0, 300);
-    if ('socialLinks' in data)
+    if (data.socialLinks !== undefined)
       update.socialLinks = validateSocialLinks(data.socialLinks);
-    if ('avatarColor' in data) {
+    if (data.avatarColor !== undefined) {
       const color = data.avatarColor;
       if (color === null || color === '') update.avatarColor = null;
       else if (
@@ -122,9 +113,9 @@ export class UsersService {
         update.avatarColor = color;
       else throw new BadRequestException("Couleur d'avatar invalide");
     }
-    if ('image' in data) update.image = validateImageUrl(data.image);
+    if (data.image !== undefined) update.image = validateImageUrl(data.image);
     // Fond d'écran : soit un preset (`preset:<slug>`), soit une image uploadée (`url:<https://...>`)
-    if ('chatWallpaper' in data) {
+    if (data.chatWallpaper !== undefined) {
       const w = data.chatWallpaper;
       if (w === null || w === '') update.chatWallpaper = null;
       else if (typeof w === 'string' && /^preset:[a-z0-9-]{1,50}$/i.test(w))

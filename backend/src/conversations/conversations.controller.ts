@@ -11,6 +11,13 @@ import {
 import { ConversationsService } from './conversations.service';
 import { ChatGateway } from '../chat/chat.gateway';
 import { getSessionUser } from '../auth/get-session-user';
+import {
+  AddMembersDto,
+  CreateDmDto,
+  CreateGroupDto,
+  SetGroupRoleDto,
+  UpdateGroupDto,
+} from './dto/conversation.dto';
 import type { Request } from 'express';
 
 function displayName(
@@ -43,14 +50,13 @@ export class ConversationsController {
   @Post('group')
   async createGroup(
     @Req() req: Request,
-    @Body('name') name: string,
-    @Body('memberIds') memberIds: string[],
+    @Body() { name, memberIds }: CreateGroupDto,
   ) {
     const user = await getSessionUser(req);
     const conv = await this.conversationsService.createGroupConversation(
       user.id,
       name,
-      memberIds ?? [],
+      memberIds,
     );
     await this.chatGateway.emitSystemMessage(
       conv.id,
@@ -61,7 +67,7 @@ export class ConversationsController {
   }
 
   @Post('dm')
-  async createOrGetDm(@Req() req: Request, @Body('userId') userId: string) {
+  async createOrGetDm(@Req() req: Request, @Body() { userId }: CreateDmDto) {
     const user = await getSessionUser(req);
     return this.conversationsService.getOrCreateDmConversation(user.id, userId);
   }
@@ -70,7 +76,7 @@ export class ConversationsController {
   async updateGroup(
     @Req() req: Request,
     @Param('id') id: string,
-    @Body() body: { name?: string; description?: string; image?: string },
+    @Body() body: UpdateGroupDto,
   ) {
     const user = await getSessionUser(req);
     const prev = await this.conversationsService.getConversationById(
@@ -114,16 +120,16 @@ export class ConversationsController {
   async addMembers(
     @Req() req: Request,
     @Param('id') id: string,
-    @Body('memberIds') memberIds: string[],
+    @Body() { memberIds }: AddMembersDto,
   ) {
     const user = await getSessionUser(req);
     const result = await this.conversationsService.addMembers(
       id,
       user.id,
-      memberIds ?? [],
+      memberIds,
     );
     // Message système uniquement pour les membres réellement ajoutés
-    for (const memberId of memberIds ?? []) {
+    for (const memberId of memberIds) {
       const added = result?.participants.find((p) => p.user.id === memberId);
       if (!added) continue;
       await this.chatGateway.emitSystemMessage(
@@ -140,7 +146,7 @@ export class ConversationsController {
     @Req() req: Request,
     @Param('id') id: string,
     @Param('userId') targetUserId: string,
-    @Body('role') role: 'ADMIN' | 'MEMBER',
+    @Body() { role }: SetGroupRoleDto,
   ) {
     const user = await getSessionUser(req);
     const result = await this.conversationsService.setMemberRole(

@@ -10,6 +10,7 @@ import {
 import { getSessionUser } from '../auth/get-session-user';
 import { UsersService } from './users.service';
 import type { Request } from 'express';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @Controller('users')
 export class UsersController {
@@ -30,18 +31,7 @@ export class UsersController {
   }
 
   @Patch('me')
-  async updateProfile(
-    @Req() req: Request,
-    @Body()
-    body: {
-      nickname?: string;
-      bio?: string;
-      socialLinks?: Record<string, string>;
-      avatarColor?: string;
-      image?: string;
-      chatWallpaper?: string | null;
-    },
-  ) {
+  async updateProfile(@Req() req: Request, @Body() body: UpdateProfileDto) {
     const user = await getSessionUser(req);
     return this.usersService.updateUser(user.id, body);
   }
