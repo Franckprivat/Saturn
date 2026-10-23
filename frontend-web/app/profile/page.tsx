@@ -120,7 +120,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     authClient.getSession().then(({ data }) => {
-      if (!data?.user) return router.push('/login');
+      if (!data?.user) return router.push('/');
       // Fetch full profile from our API (includes bio, socialLinks, etc.)
       api.get('/users/me').then((res) => {
         const u = res.data;
@@ -214,7 +214,7 @@ export default function ProfilePage() {
     // Ce navigateur ne doit plus recevoir les notifications de ce compte
     await disablePush();
     await authClient.signOut();
-    router.push('/login');
+    router.push('/');
   };
 
   const toggleFriend = (id: string) => {
