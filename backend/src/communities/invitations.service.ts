@@ -347,14 +347,13 @@ export class InvitationsService {
         targetUserId: inviteeId,
       });
       // Notification temps réel avec actions Accepter / Refuser
-      this.chatGateway.server.to(`user:${inviteeId}`).emit('notification', {
+      void this.chatGateway.notify([inviteeId], {
         type: 'community_invite',
         title: `Invitation — ${community.name}`,
         body: `${displayName(inviter)} t'invite à rejoindre ${community.name}${trimmedMessage ? ` : « ${trimmedMessage} »` : ''}`,
         href: '/communities',
         image: community.image,
         inviteId: invite.id,
-        timestamp: new Date().toISOString(),
       });
     }
 
@@ -448,16 +447,13 @@ export class InvitationsService {
     }
 
     // Prévenir l'inviteur du résultat
-    this.chatGateway.server
-      .to(`user:${invite.inviterId}`)
-      .emit('notification', {
-        type: accept ? 'invite_accepted' : 'invite_declined',
-        title: invite.community.name,
-        body: `${displayName(invitee)} a ${accept ? 'accepté' : 'refusé'} ton invitation`,
-        href: accept ? `/communities/${invite.communityId}` : '/communities',
-        image: invite.community.image,
-        timestamp: new Date().toISOString(),
-      });
+    void this.chatGateway.notify([invite.inviterId], {
+      type: accept ? 'invite_accepted' : 'invite_declined',
+      title: invite.community.name,
+      body: `${displayName(invitee)} a ${accept ? 'accepté' : 'refusé'} ton invitation`,
+      href: accept ? `/communities/${invite.communityId}` : '/communities',
+      image: invite.community.image,
+    });
 
     return { ok: true, communityId: accept ? invite.communityId : null };
   }
@@ -871,7 +867,7 @@ export class InvitationsService {
     );
 
     // Prévenir le demandeur
-    this.chatGateway.server.to(`user:${request.userId}`).emit('notification', {
+    void this.chatGateway.notify([request.userId], {
       type: approve ? 'request_approved' : 'request_rejected',
       title: request.community.name,
       body: approve
@@ -879,7 +875,6 @@ export class InvitationsService {
         : `Ta demande pour rejoindre ${request.community.name} a été refusée`,
       href: approve ? `/communities/${communityId}` : '/communities',
       image: request.community.image,
-      timestamp: new Date().toISOString(),
     });
 
     return { ok: true };
@@ -932,13 +927,12 @@ export class InvitationsService {
     });
     for (const m of approvers) {
       if (RANK[m.role as Role] < RANK[minRole]) continue;
-      this.chatGateway.server.to(`user:${m.userId}`).emit('notification', {
+      void this.chatGateway.notify([m.userId], {
         type: 'join_request',
         title: `Demande d'adhésion — ${communityName}`,
         body: `${displayName(requester)} souhaite rejoindre la communauté`,
         href: `/communities/${communityId}`,
         image: settings?.image,
-        timestamp: new Date().toISOString(),
       });
     }
   }

@@ -8,12 +8,14 @@ function backendOrigins(): string[] {
     process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001',
     process.env.NEXT_PUBLIC_AUTH_URL,
     process.env.NEXT_PUBLIC_SOCKET_URL,
+    // Serveur LiveKit sur un autre domaine (inutile s'il passe par Nginx)
+    process.env.NEXT_PUBLIC_LIVEKIT_URL,
   ];
   const origins = new Set<string>();
   for (const raw of urls) {
     if (!raw) continue;
     try {
-      const { origin, protocol, host } = new URL(raw);
+      const { origin, protocol, host } = new URL(raw.replace(/^ws/, 'http'));
       origins.add(origin);
       origins.add(`${protocol === 'https:' ? 'wss' : 'ws'}://${host}`);
     } catch { /* URL invalide : ignorée */ }

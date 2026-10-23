@@ -28,6 +28,34 @@ services:
       timeout: 5s
       retries: 5
 
+  # Socket.IO partagé entre plusieurs instances du backend
+  # (docker compose up -d --scale backend=2)
+  redis:
+    image: redis:7-alpine
+    logging: *logging
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Serveur média des salons vocaux (SFU). Ports à ouvrir sur le pare-feu :
+  # 7881/tcp et 50000-50100/udp. La signalisation passe par Nginx (/livekit/).
+  livekit:
+    image: livekit/livekit-server:v1.12.0
+    logging: *logging
+    restart: unless-stopped
+    command: ["--config", "/etc/livekit.yaml", "--node-ip", "${LIVEKIT_NODE_IP:-127.0.0.1}"]
+    environment:
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-saturn}: ${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET manquant dans .env}"
+    ports:
+      - "7881:7881"
+      - "50000-50100:50000-50100/udp"
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+
   backend:
     build: ./backend
     logging: *logging
@@ -40,12 +68,19 @@ services:
       PORT: "3000"
       # Le navigateur passe par Nginx : better-auth doit connaître cette origine
       BETTER_AUTH_URL: ${PUBLIC_URL:-http://localhost}
+      REDIS_URL: redis://redis:6379
+      # Salons vocaux : le navigateur passe par Nginx, le backend parle directement à LiveKit
+      LIVEKIT_URL: ${PUBLIC_URL:-http://localhost}/livekit
+      LIVEKIT_API_URL: http://livekit:7880
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-saturn}
     volumes:
       # Persistance des fichiers uploadés : sans ce volume, chaque rebuild du
       # conteneur effaçait les images (URLs orphelines en base → images cassées)
       - uploads-data:/usr/src/app/uploads
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
@@ -90,6 +125,8 @@ services:
         condition: service_healthy
       frontend-web:
         condition: service_healthy
+      livekit:
+        condition: service_started
     restart: unless-stopped
 
 volumes:

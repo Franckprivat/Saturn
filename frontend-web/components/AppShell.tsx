@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import { useChatStore } from '@/store/chatStore';
 import { useThemeStore } from '@/store/themeStore';
 import { useNotificationStore, type AppNotification } from '@/store/notificationStore';
+import { syncPush } from '@/lib/push';
 import { SaturnLogo } from '@/components/SaturnLogo';
 import { CallManager } from '@/components/CallManager';
 import { useChatSocket } from '@/hooks/useChatSocket';
@@ -259,7 +260,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // (les navigateurs exigent une interaction pour afficher la demande)
   useEffect(() => {
     if (typeof Notification === 'undefined' || Notification.permission !== 'default') return;
-    const ask = () => { Notification.requestPermission().catch(() => {}); };
+    const ask = () => {
+      Notification.requestPermission()
+        .then((p) => { if (p === 'granted') void syncPush(); })
+        .catch(() => {});
+    };
     window.addEventListener('pointerdown', ask, { once: true });
     return () => window.removeEventListener('pointerdown', ask);
   }, []);
@@ -276,6 +281,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     authClient.getSession().then(({ data }) => {
       if (!data?.user) return;
       setUser(data.user);
+      // Notifications push : abonnement de ce navigateur si déjà autorisé
+      void syncPush();
       api.get('/users/me').then((res) => setProfile(res.data)).catch(() => {});
       // Badges initiaux (demandes d'amis, appels manqués)
       useBadgeStore.getState().refreshFriendRequests(data.user.id);
