@@ -18,11 +18,15 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+const PUBLIC_PAGES = ['/', '/login', '/signup', '/forgot-password', '/reset-password'];
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      window.location.href = '/login';
+    // Session expirée : retour à la page d'accueil (sauf si on y est déjà,
+    // ou sur une page de connexion)
+    if (error.response?.status === 401 && !PUBLIC_PAGES.includes(window.location.pathname)) {
+      window.location.href = '/';
     }
     return Promise.reject(error);
   }
