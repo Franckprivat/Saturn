@@ -1,0 +1,27 @@
+# Surcharge de développement (hot reload, ports directs) :
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+services:
+  backend:
+    ports:
+      # Accès direct au backend depuis la machine hôte uniquement
+      - "127.0.0.1:3001:3000"
+
+  frontend-web:
+    build:
+      target: dev
+    user: root
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost/api
+      NEXT_PUBLIC_AUTH_URL: http://localhost
+      NEXT_PUBLIC_SOCKET_URL: http://localhost
+      WATCHPACK_POLLING: "true"
+    volumes:
+      # Code monté pour le hot reload ; rebuild l'image si package.json change
+      - ./frontend-web:/app
+      - /app/node_modules
+      - /app/.next
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:3000/login"]
+      start_period: 90s

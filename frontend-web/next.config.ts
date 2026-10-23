@@ -55,6 +55,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Serveur autonome pour l'image Docker de production (voir dockerfile)
+  output: 'standalone',
+
   async headers() {
     return [
       {

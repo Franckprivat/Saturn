@@ -237,6 +237,7 @@ function NotificationDropdown({ onClose }: { onClose: () => void }) {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  useEffect(() => { void useNotificationStore.persist.rehydrate(); }, []);
   const pathname = usePathname();
   // Pont temps réel global : messages, réactions, reçus de lecture → store
   const socket = useChatSocket();
