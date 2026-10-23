@@ -1,98 +1,156 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
+import { router } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { Avatar } from '@/components/avatar';
+import { Badge, Button, EmptyState, Loading } from '@/components/ui';
+import { Colors, Radius } from '@/constants/theme';
+import { authClient } from '@/lib/auth-client';
+import { conversationTitle, formatListDate, messagePreview, otherParticipant } from '@/lib/format';
+import type { Conversation } from '@/lib/types';
+import { loadConversations } from '@/hooks/use-realtime';
+import { useChatStore } from '@/store/chat';
+import { usePresenceStore } from '@/store/presence';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+function ConversationRow({ conv, myId }: { conv: Conversation; myId?: string }) {
+  const unread = useChatStore((s) => s.unread[conv.id] ?? 0);
+  const typing = useChatStore((s) => (s.typing[conv.id]?.length ?? 0) > 0);
+  const other = conv.type === 'DM' ? otherParticipant(conv, myId) : undefined;
+  const online = usePresenceStore((s) => (other ? !!s.online[other.id] : false));
+  const last = conv.messages?.[0];
+  const title = conversationTitle(conv, myId);
 
-export default function HomeScreen() {
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <Pressable
+      onPress={() => router.push({ pathname: '/chat/[id]', params: { id: conv.id } })}
+      style={({ pressed }) => [styles.row, pressed && { backgroundColor: Colors.hover }]}
+    >
+      {other ? (
+        <Avatar user={other} online={online} size={52} />
+      ) : (
+        <Avatar name={title} image={conv.image} size={52} />
+      )}
+      <View style={styles.rowBody}>
+        <View style={styles.rowTop}>
+          <Text style={styles.rowTitle} numberOfLines={1}>
+            {conv.type === 'GROUP' && <Ionicons name="people" size={14} color={Colors.muted} />}{' '}
+            {title}
+          </Text>
+          <Text style={[styles.rowDate, unread > 0 && { color: Colors.primary, fontWeight: '700' }]}>
+            {formatListDate(last?.createdAt ?? conv.lastMessageAt ?? conv.createdAt)}
+          </Text>
+        </View>
+        <View style={styles.rowTop}>
+          <Text
+            style={[styles.rowPreview, unread > 0 && { color: Colors.text, fontWeight: '600' }, typing && styles.typing]}
+            numberOfLines={1}
+          >
+            {typing ? 'écrit…' : messagePreview(last, myId)}
+          </Text>
+          <Badge count={unread} />
+        </View>
+      </View>
+    </Pressable>
+  );
+}
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+export default function ConversationsScreen() {
+  const { data: session } = authClient.useSession();
+  const myId = session?.user?.id;
+  const conversations = useChatStore((s) => s.conversations);
+  const loaded = useChatStore((s) => s.loaded);
+  const [query, setQuery] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return conversations;
+    return conversations.filter((c) => conversationTitle(c, myId).toLowerCase().includes(q));
+  }, [conversations, query, myId]);
+
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadConversations().catch(() => {});
+    setRefreshing(false);
+  }, []);
+
+  return (
+    <View style={{ flex: 1 }}>
+      {!loaded ? (
+        <Loading />
+      ) : (
+        <FlatList
+          data={filtered}
+          keyExtractor={(c) => c.id}
+          renderItem={({ item }) => <ConversationRow conv={item} myId={myId} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={Colors.primary} />}
+          contentContainerStyle={filtered.length ? undefined : { flexGrow: 1 }}
+          ListHeaderComponent={
+            <View style={styles.header}>
+              <View style={styles.search}>
+                <Ionicons name="search" size={18} color={Colors.faint} />
+                <TextInput
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder="Rechercher une discussion"
+                  placeholderTextColor={Colors.faint}
+                  style={styles.searchInput}
+                  clearButtonMode="while-editing"
+                />
+              </View>
+              <Pressable onPress={() => router.push('/new-group')} style={styles.newGroup} accessibilityLabel="Nouveau groupe">
+                <Ionicons name="people-outline" size={20} color={Colors.primary} />
+                <Ionicons name="add" size={14} color={Colors.primary} style={{ marginLeft: -4 }} />
+              </Pressable>
+            </View>
+          }
+          ListEmptyComponent={
+            query ? (
+              <EmptyState icon="search" title="Aucun résultat" />
+            ) : (
+              <EmptyState
+                icon="chatbubbles-outline"
+                title="Aucune discussion"
+                text="Ajoute des amis puis démarre une discussion depuis l'onglet Amis."
+                action={
+                  <Button title="Trouver des amis" small onPress={() => router.push('/friends')} style={{ marginTop: 8 }} />
+                }
+              />
+            )
+          }
+        />
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
+  header: { flexDirection: 'row', gap: 10, padding: 12, paddingBottom: 6 },
+  search: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    backgroundColor: Colors.sidebar,
+    borderRadius: Radius.md,
+    paddingHorizontal: 12,
+    height: 42,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  searchInput: { flex: 1, fontSize: 15, color: Colors.text },
+  newGroup: {
+    width: 42,
+    height: 42,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.primarySoft,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 10 },
+  rowBody: { flex: 1, gap: 4, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Colors.border, paddingBottom: 10 },
+  rowTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  rowTitle: { flex: 1, fontSize: 16, fontWeight: '700', color: Colors.text },
+  rowDate: { fontSize: 12, color: Colors.faint },
+  rowPreview: { flex: 1, fontSize: 14, color: Colors.muted },
+  typing: { color: Colors.primary, fontStyle: 'italic' },
 });

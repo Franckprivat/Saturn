@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { betterAuth } from 'better-auth';
+import { expo } from '@better-auth/expo';
 import { Pool } from 'pg';
 import * as nodemailer from 'nodemailer';
 import {
@@ -43,14 +44,29 @@ function emailLayout(title: string, text: string, url: string, cta: string) {
   `;
 }
 
+/**
+ * Origines de l'application mobile : son schéma (saturn://) et, hors
+ * production, Expo Go (exp://) pour le développement sur téléphone.
+ */
+const mobileOrigins = [
+  `${process.env.MOBILE_APP_SCHEME || 'saturn'}://`,
+  ...(process.env.NODE_ENV === 'production' ? [] : ['exp://']),
+];
+
 export const auth = betterAuth({
   database: new Pool({
     connectionString: process.env.BETTER_AUTH_DATABASE_URL,
   }),
   secret: process.env.BETTER_AUTH_SECRET,
-  trustedOrigins: process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
-    : ['http://localhost:3000'],
+  trustedOrigins: [
+    ...(process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+      : ['http://localhost:3000']),
+    ...mobileOrigins,
+  ],
+  // Application mobile (frontend-mobile) : le client Expo envoie son origine
+  // dans l'en-tête expo-origin et stocke le cookie de session lui-même.
+  plugins: [expo()],
   session: {
     modelName: 'session',
     expiresIn: 60 * 60 * 24 * 7, // 7 jours
