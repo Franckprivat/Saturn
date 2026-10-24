@@ -1,4 +1,5 @@
-import { Tabs } from 'expo-router';
+import { Tabs } from 'expo-router/js-tabs';
+import type { ColorValue } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { HapticTab } from '@/components/haptic-tab';
 import { Colors } from '@/constants/theme';
@@ -8,8 +9,8 @@ import { usePresenceStore } from '@/store/presence';
 type IconName = keyof typeof Ionicons.glyphMap;
 
 function icon(active: IconName, inactive: IconName) {
-  function TabIcon({ color, focused }: { color: string; focused: boolean }) {
-    return <Ionicons name={focused ? active : inactive} size={24} color={color} />;
+  function TabIcon({ color, focused }: { color: ColorValue; focused: boolean }) {
+    return <Ionicons name={focused ? active : inactive} size={24} color={color as string} />;
   }
   return TabIcon;
 }

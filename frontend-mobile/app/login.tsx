@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View, type TextInputInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import { Link } from 'expo-router';
@@ -17,7 +17,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState<'form' | 'demo' | null>(null);
   const [error, setError] = useState('');
   const [demo, setDemo] = useState<DemoInfo | null>(null);
-  const passwordRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInputInstance>(null);
 
   useEffect(() => {
     api<DemoInfo>('/demo')

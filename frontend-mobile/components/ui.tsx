@@ -8,6 +8,7 @@ import {
   View,
   type PressableProps,
   type StyleProp,
+  type TextInputInstance,
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
@@ -60,7 +61,7 @@ const buttonVariants = {
 
 type FieldProps = TextInputProps & { label?: string; error?: string | null };
 
-export const TextField = forwardRef<TextInput, FieldProps>(function TextField({ label, error, style, ...rest }, ref) {
+export const TextField = forwardRef<TextInputInstance, FieldProps>(function TextField({ label, error, style, ...rest }, ref) {
   return (
     <View style={{ gap: 6 }}>
       {label && <Text style={styles.label}>{label}</Text>}

@@ -17,22 +17,23 @@ import { useSessionStore } from '@/store/session';
 export default function ProfileScreen() {
   const profile = useSessionStore((s) => s.profile);
   const setProfile = useSessionStore((s) => s.setProfile);
-  const [nickname, setNickname] = useState('');
-  const [bio, setBio] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
-    if (!profile) {
-      api<Profile>('/users/me').then(setProfile).catch(() => {});
-      return;
-    }
-    setNickname(profile.nickname ?? '');
-    setBio(profile.bio ?? '');
+    if (!profile) api<Profile>('/users/me').then(setProfile).catch(() => {});
   }, [profile, setProfile]);
 
   if (!profile) return <Loading />;
+  // Formulaire initialisé une fois par compte avec les valeurs du profil
+  return <ProfileForm key={profile.id} profile={profile} />;
+}
+
+function ProfileForm({ profile }: { profile: Profile }) {
+  const setProfile = useSessionStore((s) => s.setProfile);
+  const [nickname, setNickname] = useState(profile.nickname ?? '');
+  const [bio, setBio] = useState(profile.bio ?? '');
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
 
   const dirty = nickname.trim() !== (profile.nickname ?? '') || bio.trim() !== (profile.bio ?? '');
 
