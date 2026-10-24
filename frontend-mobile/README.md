@@ -1,6 +1,6 @@
 # Saturn — application mobile
 
-Application iOS / Android de Saturn, construite avec **Expo** (SDK 54, expo-router).
+Application iOS / Android de Saturn, construite avec **Expo** (SDK 58, expo-router).
 Elle parle au même backend NestJS que le site : authentification better-auth,
 API REST et temps réel Socket.IO.
 

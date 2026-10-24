@@ -72,11 +72,7 @@ export default function FriendsScreen() {
   // Recherche avec un léger délai pendant la frappe
   useEffect(() => {
     const q = query.trim();
-    if (!q) {
-      setResults([]);
-      return;
-    }
-    setSearching(true);
+    if (!q) return;
     const t = setTimeout(() => {
       api<ChatUser[]>(`/friends/search?q=${encodeURIComponent(q)}`)
         .then(setResults)
@@ -166,7 +162,11 @@ export default function FriendsScreen() {
           <Ionicons name="search" size={18} color={Colors.faint} />
           <TextInput
             value={query}
-            onChangeText={setQuery}
+            onChangeText={(value) => {
+              setQuery(value);
+              setSearching(!!value.trim());
+              if (!value.trim()) setResults([]);
+            }}
             placeholder="Pseudo ou adresse e-mail exacte"
             placeholderTextColor={Colors.faint}
             style={styles.searchInput}

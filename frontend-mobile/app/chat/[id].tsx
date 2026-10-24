@@ -11,10 +11,11 @@ import {
   Text,
   TextInput,
   View,
+  type TextInputInstance,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useHeaderHeight } from '@react-navigation/elements';
+import { useHeaderHeight } from 'expo-router/react-navigation';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
 import { Image } from 'expo-image';
@@ -70,7 +71,7 @@ export default function ChatScreen() {
   const [editing, setEditing] = useState<ChatMessage | null>(null);
   const [selected, setSelected] = useState<ChatMessage | null>(null);
   const [viewer, setViewer] = useState<string | null>(null);
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<TextInputInstance>(null);
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isTyping = useRef(false);
 
@@ -358,7 +359,7 @@ export default function ChatScreen() {
             }
             onEndReached={loadOlder}
             onEndReachedThreshold={0.3}
-            ListFooterComponent={loadingMore ? <ActivityIndicator style={{ margin: 12 }} color={Colors.primary} /> : null}
+            ListFooterComponent={loadingMore ? <ActivityIndicator style={{ margin: 12 }} color={Colors.primary} /> : undefined}
             ListEmptyComponent={
               <View style={[styles.center, { transform: [{ scaleY: -1 }] }]}>
                 <Text style={styles.emptyText}>Aucun message pour l&apos;instant. Dis bonjour 👋</Text>
